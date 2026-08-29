@@ -466,6 +466,129 @@ app.post("/api/jobs/:jobId/applications", async (req, res) => {
   }
 });
 // ====================
+// Get Student Applications
+// ====================
+app.get("/api/applications/me", async (req, res) => {
+  try {
+    const { student_id } = req.query;
+
+    if (!student_id) {
+      return res.status(400).json({
+        success: false,
+        error: "student_id is required",
+      });
+    }
+
+    const { data, error } = await supabase
+      .from("applications")
+      .select(`
+        application_id,
+        student_id,
+        job_id,
+        status,
+        applied_at,
+        updated_at,
+        jobs (
+          title,
+          category,
+          province,
+          location,
+          employers (
+            company_name
+          )
+        )
+      `)
+      .eq("student_id", student_id)
+      .order("applied_at", { ascending: false });
+
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
+    res.json({
+      success: true,
+      count: data.length,
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+// ====================
+// Update Application Status
+// ====================
+app.patch("/api/applications/:applicationId/status", async (req, res) => {
+  try {
+    const applicationId = req.params.applicationId;
+    const { status } = req.body;
+
+    const allowedStatuses = [
+      "submitted",
+      "reviewing",
+      "shortlisted",
+      "rejected",
+      "accepted",
+    ];
+
+    // Validate status
+    if (!status || !allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid application status",
+      });
+    }
+
+    // Check application exists
+    const { data: application, error: findError } = await supabase
+      .from("applications")
+      .select("application_id")
+      .eq("application_id", applicationId)
+      .single();
+
+    if (findError || !application) {
+      return res.status(404).json({
+        success: false,
+        error: "Application not found",
+      });
+    }
+
+    // Update status
+    const { data, error } = await supabase
+      .from("applications")
+      .update({
+        status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("application_id", applicationId)
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Application status updated successfully",
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+// ====================
 // Start Server
 // ====================
 const PORT = process.env.PORT || 3000;
