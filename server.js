@@ -252,6 +252,7 @@ app.patch("/api/jobs/:id", async (req, res) => {
     const jobId = req.params.id;
 
     const {
+      employer_id,
       title,
       description,
       category,
@@ -260,10 +261,18 @@ app.patch("/api/jobs/:id", async (req, res) => {
       status,
     } = req.body;
 
+    // Validate employer_id
+    if (!employer_id) {
+      return res.status(400).json({
+        success: false,
+        error: "employer_id is required",
+      });
+    }
+
     // Check if job exists
     const { data: existingJob, error: findError } = await supabase
       .from("jobs")
-      .select("job_id")
+      .select("job_id, employer_id")
       .eq("job_id", jobId)
       .single();
 
@@ -271,6 +280,14 @@ app.patch("/api/jobs/:id", async (req, res) => {
       return res.status(404).json({
         success: false,
         error: "Job not found",
+      });
+    }
+
+    // Check job ownership
+    if (Number(existingJob.employer_id) !== Number(employer_id)) {
+      return res.status(403).json({
+        success: false,
+        error: "You are not authorized to update this job",
       });
     }
 
