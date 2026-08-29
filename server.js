@@ -245,6 +245,227 @@ app.get("/api/jobs/:id", async (req, res) => {
   }
 });
 // ====================
+// Update a Job
+// ====================
+app.patch("/api/jobs/:id", async (req, res) => {
+  try {
+    const jobId = req.params.id;
+
+    const {
+      title,
+      description,
+      category,
+      location,
+      province,
+      status,
+    } = req.body;
+
+    // Check if job exists
+    const { data: existingJob, error: findError } = await supabase
+      .from("jobs")
+      .select("job_id")
+      .eq("job_id", jobId)
+      .single();
+
+    if (findError || !existingJob) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    // Build update object
+    const updates = {};
+
+    if (title !== undefined) updates.title = title;
+    if (description !== undefined) updates.description = description;
+    if (category !== undefined) updates.category = category;
+    if (location !== undefined) updates.location = location;
+    if (province !== undefined) updates.province = province;
+    if (status !== undefined) updates.status = status;
+
+    // Nothing to update
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "No fields to update",
+      });
+    }
+
+    updates.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from("jobs")
+      .update(updates)
+      .eq("job_id", jobId)
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Job updated successfully",
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+// ====================
+// Delete a Job
+// ====================
+app.delete("/api/jobs/:id", async (req, res) => {
+  try {
+    const jobId = req.params.id;
+
+    // Check if job exists
+    const { data: existingJob, error: findError } = await supabase
+      .from("jobs")
+      .select("job_id")
+      .eq("job_id", jobId)
+      .single();
+
+    if (findError || !existingJob) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    // Delete job
+    const { error } = await supabase
+      .from("jobs")
+      .delete()
+      .eq("job_id", jobId);
+
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Job deleted successfully",
+      job_id: Number(jobId),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+// ====================
+// Submit Job Application
+// ====================
+app.post("/api/jobs/:jobId/applications", async (req, res) => {
+  try {
+    const jobId = req.params.jobId;
+    const { student_id } = req.body;
+
+    // Validate student_id
+    if (!student_id) {
+      return res.status(400).json({
+        success: false,
+        error: "student_id is required",
+      });
+    }
+
+    // Check student
+    const { data: student, error: studentError } = await supabase
+      .from("students")
+      .select("student_id, consent_status")
+      .eq("student_id", student_id)
+      .single();
+
+    if (studentError || !student) {
+      return res.status(404).json({
+        success: false,
+        error: "Student not found",
+      });
+    }
+
+    // Check job
+    const { data: job, error: jobError } = await supabase
+      .from("jobs")
+      .select("job_id, status")
+      .eq("job_id", jobId)
+      .single();
+
+    if (jobError || !job) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    // Job must be open
+    if (job.status !== "open") {
+      return res.status(400).json({
+        success: false,
+        error: "Job is not open for applications",
+      });
+    }
+
+    // Check duplicate application
+    const { data: existingApplication } = await supabase
+      .from("applications")
+      .select("application_id")
+      .eq("student_id", student_id)
+      .eq("job_id", jobId)
+      .maybeSingle();
+
+    if (existingApplication) {
+      return res.status(409).json({
+        success: false,
+        error: "Student has already applied for this job",
+      });
+    }
+
+    // Create application
+    const { data, error } = await supabase
+      .from("applications")
+      .insert([
+        {
+          student_id: student_id,
+          job_id: jobId,
+          status: "submitted",
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Application submitted successfully",
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+// ====================
 // Start Server
 // ====================
 const PORT = process.env.PORT || 3000;
