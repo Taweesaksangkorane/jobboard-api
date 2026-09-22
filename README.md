@@ -6,7 +6,6 @@
 **Team:** Team 18
 **Database:** Supabase PostgreSQL
 **Technology:** Node.js, Express.js, Supabase, PostgreSQL
-**Submission Date:** 31 August 2026
 
 **Student Names and IDs:**
 
@@ -1237,62 +1236,3 @@ The final submission includes evidence from the actual Supabase database, API te
 
 ---
 
-# 29. Final Submission Checklist
-
-## Database
-
-* [ ] Supabase project created
-* [ ] Eight tables created
-* [ ] ER Diagram added
-* [ ] Table Editor screenshot added
-* [ ] SQL deployment screenshot added
-* [ ] Foreign key relationships verified
-* [ ] Constraints verified
-
-## API
-
-* [ ] GET all jobs tested
-* [ ] GET one job tested
-* [ ] POST job tested
-* [ ] PATCH job tested
-* [ ] DELETE job tested
-* [ ] Job filtering tested
-* [ ] Application submission tested
-* [ ] Student applications tested
-* [ ] Application status update tested
-
-## Validation
-
-* [ ] Missing student ID tested
-* [ ] Student not found tested
-* [ ] Job not found tested
-* [ ] Duplicate application tested
-* [ ] Invalid status tested
-* [ ] Unauthorized operation tested
-
-## SQL Queries
-
-* [ ] Open jobs query tested
-* [ ] Job skills query tested
-* [ ] Student applications query tested
-* [ ] Skill matching query tested
-* [ ] SQL result screenshots added
-
-## Testing
-
-* [ ] Jest tests executed
-* [ ] Supertest tests executed
-* [ ] Actual test result added
-* [ ] Terminal screenshot added
-
-## Submission
-
-* [ ] Team member names and IDs added
-* [ ] Supabase project name added
-* [ ] Supabase region added
-* [ ] Deployment date added
-* [ ] All screenshots added
-* [ ] No API keys or passwords shown
-* [ ] Markdown reviewed
-* [ ] Converted to PDF
-* [ ] Final PDF checked
