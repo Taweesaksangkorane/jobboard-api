@@ -3,6 +3,11 @@ require("dotenv").config();
 const express = require("express");
 const { createClient } = require("@supabase/supabase-js");
 
+const {
+  sendNotificationWebhook,
+   createNotification,  
+} = require("./integration/notificationClient");
+
 const app = express();
 
 app.use(express.json());
@@ -564,7 +569,7 @@ app.patch("/api/applications/:applicationId/status", async (req, res) => {
     // Check application exists
     const { data: application, error: findError } = await supabase
       .from("applications")
-      .select("application_id")
+      .select("application_id, student_id, job_id, status")
       .eq("application_id", applicationId)
       .single();
 
@@ -575,7 +580,7 @@ app.patch("/api/applications/:applicationId/status", async (req, res) => {
       });
     }
 
-    // Update status
+    // Update application status
     const { data, error } = await supabase
       .from("applications")
       .update({
@@ -593,10 +598,99 @@ app.patch("/api/applications/:applicationId/status", async (req, res) => {
       });
     }
 
+    // ====================
+    // Create Integration Event
+    // ====================
+
+    const eventId =
+      `app-status-${applicationId}-${status}-${Date.now()}`;
+
+    const event = {
+      event_id: eventId,
+      event_type: "APPLICATION_STATUS_CHANGED",
+      timestamp: new Date().toISOString(),
+      data: {
+        application_id: data.application_id,
+        student_id: data.student_id,
+        job_id: data.job_id,
+        old_status: application.status,
+        new_status: data.status,
+      },
+    };
+
+    // ====================
+    // Save to Integration Outbox
+    // ====================
+
+    const targetUrl =
+      `${process.env.NOTIFICATION_SERVICE_URL}/api/webhooks/jobboard`;
+
+    const { error: outboxError } = await supabase
+      .from("integration_outbox")
+      .insert([
+        {
+          event_id: eventId,
+          event_type: "APPLICATION_STATUS_CHANGED",
+          target_url: targetUrl,
+          payload: event,
+          status: "pending",
+          attempt_count: 0,
+        },
+      ]);
+
+    if (outboxError) {
+      console.error(
+        "[OUTBOX ERROR]",
+        outboxError.message
+      );
+    }
+
+    // ====================
+    // Send Webhook
+    // ====================
+
+    const notificationResult =
+      await sendNotificationWebhook(event);
+
+    // ====================
+    // Update Outbox Result
+    // ====================
+
+    if (notificationResult.success) {
+      await supabase
+        .from("integration_outbox")
+        .update({
+          status: "sent",
+          attempt_count: 1,
+          sent_at: new Date().toISOString(),
+          last_error: null,
+        })
+        .eq("event_id", eventId);
+    } else {
+      await supabase
+        .from("integration_outbox")
+        .update({
+          status: "pending",
+          attempt_count: 1,
+          last_error:
+            notificationResult.error ||
+            "Notification service unavailable",
+        })
+        .eq("event_id", eventId);
+    }
+
+    // Job Board still succeeds even if Notification fails
     res.json({
       success: true,
       message: "Application status updated successfully",
       data,
+      integration: {
+        event_id: eventId,
+        notification_sent: notificationResult.success,
+        notification_status: notificationResult.success
+          ? "sent"
+          : "pending",
+      },
     });
   } catch (error) {
     res.status(500).json({
@@ -606,14 +700,408 @@ app.patch("/api/applications/:applicationId/status", async (req, res) => {
   }
 });
 // ====================
+// Integration - Get Application
+// ====================
+app.get("/api/integration/applications/:applicationId", async (req, res) => {
+  try {
+    const applicationId = req.params.applicationId;
+
+    const requestTimestamp = new Date().toISOString();
+
+    const partner =
+      req.headers["x-partner-service"] || "unknown";
+
+    console.log("\n[INTEGRATION REQUEST]");
+    console.log("Timestamp:", requestTimestamp);
+    console.log("Partner:", partner);
+    console.log("Endpoint:", req.originalUrl);
+    console.log("Application ID:", applicationId);
+
+    const { data, error } = await supabase
+      .from("applications")
+      .select(`
+        application_id,
+        student_id,
+        job_id,
+        status,
+        applied_at,
+        updated_at
+      `)
+      .eq("application_id", applicationId)
+      .single();
+
+    if (error || !data) {
+      console.log("Response: 404 Application not found");
+
+      return res.status(404).json({
+        success: false,
+        error: "Application not found",
+        requested_at: requestTimestamp,
+      });
+    }
+
+    console.log("Response: 200 OK");
+    console.log("Data:", data);
+
+    res.json({
+      success: true,
+      requested_at: requestTimestamp,
+      data,
+    });
+  } catch (error) {
+    console.error("[INTEGRATION ERROR]", error.message);
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+// ====================
+// Webhook Receiver - Notification Service
+// ====================
+app.post("/api/webhooks/notification", async (req, res) => {
+  try {
+    const receivedSecret =
+      req.headers["x-webhook-secret"];
+
+    const expectedSecret =
+      process.env.WEBHOOK_SECRET;
+
+    const receivedAt =
+      new Date().toISOString();
+
+    console.log("\n[WEBHOOK RECEIVED]");
+    console.log("Timestamp:", receivedAt);
+    console.log(
+      "Payload:",
+      JSON.stringify(req.body, null, 2)
+    );
+
+    // ====================
+    // Verify Secret
+    // ====================
+
+    if (
+      !receivedSecret ||
+      receivedSecret !== expectedSecret
+    ) {
+      console.log("Secret verification: FAIL");
+
+      return res.status(401).json({
+        success: false,
+        error: "Invalid webhook secret",
+      });
+    }
+
+    console.log("Secret verification: PASS");
+
+    const {
+      event_id,
+      event_type,
+    } = req.body;
+
+    // ====================
+    // Validate Payload
+    // ====================
+
+    if (!event_id || !event_type) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "event_id and event_type are required",
+      });
+    }
+
+    // ====================
+    // Check Duplicate
+    // ====================
+
+    const {
+      data: existingEvent,
+      error: existingError,
+    } = await supabase
+      .from("integration_events")
+      .select("event_id")
+      .eq("event_id", event_id)
+      .maybeSingle();
+
+    if (existingError) {
+      console.error(
+        "[WEBHOOK DB ERROR]",
+        existingError.message
+      );
+
+      return res.status(500).json({
+        success: false,
+        error: existingError.message,
+      });
+    }
+
+    if (existingEvent) {
+      console.log(
+        "Duplicate event:",
+        event_id
+      );
+
+      return res.status(200).json({
+        success: true,
+        duplicate: true,
+        event_id,
+        message: "Event already processed",
+      });
+    }
+
+    // ====================
+    // Store Event
+    // ====================
+
+    const {
+      data,
+      error,
+    } = await supabase
+      .from("integration_events")
+      .insert([
+        {
+          event_id,
+          event_type,
+          source: "notification-service",
+          payload: req.body,
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      console.error(
+        "[WEBHOOK STORE ERROR]",
+        error.message
+      );
+
+      return res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
+    console.log("Stored event:", event_id);
+
+    res.status(200).json({
+      success: true,
+      message: "Webhook received successfully",
+      event_id,
+      stored: true,
+      received_at: receivedAt,
+      data,
+    });
+  } catch (error) {
+    console.error(
+      "[WEBHOOK ERROR]",
+      error.message
+    );
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+// ====================
+// Retry Pending Notification Events
+// ====================
+async function retryPendingNotifications() {
+  try {
+    const { data: pendingEvents, error } = await supabase
+      .from("integration_outbox")
+      .select("*")
+      .eq("status", "pending")
+      .order("created_at", { ascending: true })
+      .limit(10);
+
+    if (error) {
+      console.error("[RETRY DB ERROR]", error.message);
+      return;
+    }
+
+    if (!pendingEvents || pendingEvents.length === 0) {
+      return;
+    }
+
+    console.log(
+      `\n[RETRY WORKER] Found ${pendingEvents.length} pending event(s)`
+    );
+
+    for (const item of pendingEvents) {
+      console.log(
+        `[RETRY] Event ${item.event_id} attempt #${item.attempt_count + 1}`
+      );
+
+      const result =
+        await sendNotificationWebhook(item.payload);
+
+      if (result.success) {
+        await supabase
+          .from("integration_outbox")
+          .update({
+            status: "sent",
+            attempt_count: item.attempt_count + 1,
+            last_error: null,
+            sent_at: new Date().toISOString(),
+          })
+          .eq("event_id", item.event_id);
+
+        console.log(
+          `[RETRY SUCCESS] ${item.event_id}`
+        );
+      } else {
+        const errorMessage =
+          result.error ||
+          (result.statusCode
+            ? `HTTP ${result.statusCode}`
+            : "Notification service unavailable");
+
+        await supabase
+          .from("integration_outbox")
+          .update({
+            status: "pending",
+            attempt_count: item.attempt_count + 1,
+            last_error: errorMessage,
+          })
+          .eq("event_id", item.event_id);
+
+        console.log(
+          `[RETRY FAILED] ${item.event_id}: ${errorMessage}`
+        );
+      }
+    }
+  } catch (error) {
+    console.error(
+      "[RETRY WORKER ERROR]",
+      error.message
+    );
+  }
+}
+// ====================
+// Integration - Create Notification
+// Consumer Proof
+// ====================
+app.post(
+  "/api/integration/notifications",
+  async (req, res) => {
+    try {
+      const {
+        application_id,
+        message,
+      } = req.body;
+
+      if (!application_id) {
+        return res.status(400).json({
+          success: false,
+          error: "application_id is required",
+        });
+      }
+
+      // Find application
+      const {
+        data: application,
+        error,
+      } = await supabase
+        .from("applications")
+        .select(`
+          application_id,
+          student_id,
+          job_id,
+          status
+        `)
+        .eq(
+          "application_id",
+          application_id
+        )
+        .single();
+
+      if (error || !application) {
+        return res.status(404).json({
+          success: false,
+          error: "Application not found",
+        });
+      }
+
+      const notification = {
+        student_id:
+          application.student_id,
+
+        application_id:
+          application.application_id,
+
+        type:
+          "APPLICATION_STATUS_CHANGED",
+
+        message:
+          message ||
+          `Your application status is ${application.status}`,
+      };
+
+      const result =
+        await createNotification(
+          notification
+        );
+
+      if (!result.success) {
+        return res.status(502).json({
+          success: false,
+          message:
+            "Notification service request failed",
+          integration: result,
+        });
+      }
+
+      res.json({
+        success: true,
+        message:
+          "Notification created successfully",
+        integration: {
+          partner_url:
+            result.partnerUrl,
+
+          request_timestamp:
+            result.requestTimestamp,
+
+          status_code:
+            result.statusCode,
+
+          partner_response:
+            result.responseBody,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+);
+// ====================
 // Start Server
 // ====================
 const PORT = process.env.PORT || 3000;
 
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`Job Board API running on http://localhost:${PORT}`);
+    console.log(
+      `Job Board API running on http://localhost:${PORT}`
+    );
+
+    console.log(
+      "Notification retry worker started (every 10 seconds)"
+    );
   });
+
+  // Retry pending events every 10 seconds
+  setInterval(
+    retryPendingNotifications,
+    10000
+  );
 }
 
 module.exports = app;
