@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JobBoard - แพลตฟอร์มหางานและฝึกงานสำหรับนักศึกษา</title>
+    <meta name="description" content="แพลตฟอร์มหางานและฝึกงานสำหรับนิสิต นักศึกษาจบใหม่ และนายจ้าง เชื่อมต่อโอกาสทางอาชีพพร้อมระบบจัดการใบสมัครครบวงจร" />
+    <meta property="og:title" content="JobBoard - แพลตฟอร์มหางานและฝึกงานสำหรับนักศึกษา" />
+    <meta property="og:description" content="แพลตฟอร์มหางานและฝึกงานสำหรับนิสิต นักศึกษาจบใหม่ และนายจ้าง เชื่อมต่อโอกาสทางอาชีพพร้อมระบบจัดการใบสมัครครบวงจร" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-[#F8F9FC] text-[#25243A] font-['Prompt',sans-serif] antialiased">
+    <div id="root"></div>
+    <script>
+      (function () {
+        try {
+          var path = window.location.pathname.replace(/\/+$/, '');
+          if (path === '/auth/callback' && window.opener && window.opener !== window) {
+            window.opener.postMessage(
+              {
+                type: 'SUPABASE_OAUTH_CALLBACK',
+                search: window.location.search,
+                hash: window.location.hash,
+              },
+              '*'
+            );
+            window.close();
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
