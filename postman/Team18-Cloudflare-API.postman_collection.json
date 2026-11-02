@@ -1,0 +1,142 @@
+{
+  "info": {
+    "_postman_id": "bfbd4d75-f3a5-46c9-a91a-18c10df1a2e0",
+    "name": "Team18 Job Board - Cloudflare API",
+    "description": "Cloudflare Workers + D1 API checks. Select the Team18 Cloudflare Production environment. Run folders in order; Full write flow deletes its temporary job and related test data at the end.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Response is JSON', function () { pm.response.to.be.json; });",
+          "pm.test('Request succeeded', function () { pm.expect(pm.response.code).to.be.within(200, 299); });"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "https://team18-job-board.inventory-management-api.workers.dev" },
+    { "key": "studentId", "value": "4" },
+    { "key": "employerId", "value": "1" },
+    { "key": "seedJobId", "value": "6" },
+    { "key": "jobId", "value": "" },
+    { "key": "applicationId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "01 - Read-only checks",
+      "item": [
+        {
+          "name": "Health",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/health" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Worker is healthy', () => pm.expect(pm.response.json().success).to.eql(true));"] } }]
+        },
+        {
+          "name": "D1 connection",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/test-db" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('D1 is connected', () => pm.expect(pm.response.json().message).to.include('Cloudflare D1'));"] } }]
+        },
+        {
+          "name": "List jobs",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/jobs?status=open" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Jobs is an array', () => pm.expect(pm.response.json().data).to.be.an('array'));"] } }]
+        },
+        {
+          "name": "Get seed job",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/jobs/{{seedJobId}}" }
+        },
+        {
+          "name": "Student applications",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/applications/me?student_id={{studentId}}" }
+        },
+        {
+          "name": "Employer applicants",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/employers/{{employerId}}/applications" }
+        },
+        {
+          "name": "Student notifications",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/notifications?recipient_id={{studentId}}" }
+        }
+      ]
+    },
+    {
+      "name": "02 - Full write flow",
+      "description": "Run this folder in order. It creates a temporary job and application, tests status/notifications, then removes the temporary data.",
+      "item": [
+        {
+          "name": "Create temporary job",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"employer_id\": {{employerId}},\n  \"title\": \"Postman Cloudflare Test Job\",\n  \"description\": \"Temporary job created by the Team18 Postman collection.\",\n  \"category\": \"IT & Software\",\n  \"location\": \"Mueang Chiang Rai\",\n  \"province\": \"Chiang Rai\",\n  \"status\": \"open\",\n  \"work_type\": \"Internship\",\n  \"salary_range\": \"10000-15000\"\n}" },
+            "url": "{{baseUrl}}/api/jobs"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["const body = pm.response.json();", "pm.expect(body.data.job_id).to.exist;", "pm.environment.set('jobId', body.data.job_id);"] } }]
+        },
+        {
+          "name": "Update temporary job",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"employer_id\": {{employerId}},\n  \"title\": \"Postman Cloudflare Test Job - Updated\",\n  \"status\": \"open\"\n}" },
+            "url": "{{baseUrl}}/api/jobs/{{jobId}}"
+          }
+        },
+        {
+          "name": "Apply for temporary job",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"student_id\": {{studentId}},\n  \"student_name\": \"Postman Demo Student\",\n  \"student_email\": \"student@example.com\",\n  \"notes\": \"Created by Postman API test\"\n}" },
+            "url": "{{baseUrl}}/api/jobs/{{jobId}}/applications"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["const body = pm.response.json();", "pm.expect(body.data.application_id).to.exist;", "pm.environment.set('applicationId', body.data.application_id);"] } }]
+        },
+        {
+          "name": "Get integration application",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/integration/applications/{{applicationId}}" }
+        },
+        {
+          "name": "Update application status",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"reviewing\",\n  \"employer_feedback\": \"Checked with Postman\"\n}" },
+            "url": "{{baseUrl}}/api/applications/{{applicationId}}/status"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Status is reviewing', () => pm.expect(pm.response.json().data.status).to.eql('reviewing'));"] } }]
+        },
+        {
+          "name": "Check generated notification",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/notifications?recipient_id={{studentId}}" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Notification was generated', () => {", "  const id = String(pm.environment.get('applicationId'));", "  const found = pm.response.json().data.some(n => String(n.related_application_id) === id);", "  pm.expect(found).to.eql(true);", "});"] } }]
+        },
+        {
+          "name": "Delete temporary job and related test data",
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/jobs/{{jobId}}" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Temporary job deleted', () => pm.expect(pm.response.json().success).to.eql(true));", "pm.environment.unset('jobId');", "pm.environment.unset('applicationId');"] } }]
+        }
+      ]
+    },
+    {
+      "name": "03 - Webhook (requires secret)",
+      "item": [
+        {
+          "name": "Receive notification webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-webhook-secret", "value": "{{webhookSecret}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"event_id\": \"postman-{{$timestamp}}\",\n  \"event_type\": \"POSTMAN_TEST\",\n  \"data\": { \"source\": \"Postman\" }\n}" },
+            "url": "{{baseUrl}}/api/webhooks/notification"
+          }
+        }
+      ]
+    }
+  ]
+}

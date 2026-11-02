@@ -1236,3 +1236,33 @@ The final submission includes evidence from the actual Supabase database, API te
 
 ---
 
+## Cloudflare deployment (current)
+
+The application now runs as one Cloudflare Worker with React/Vite static assets,
+Cloudflare D1, and a scheduled notification-outbox retry. The former Express and
+Supabase implementation remains in `server.js` only as a rollback reference.
+
+Production: https://team18-job-board.inventory-management-api.workers.dev
+
+### Local development
+
+```powershell
+npm.cmd run cf:db:local
+npm.cmd start
+```
+
+Wrangler normally serves the full application at `http://localhost:8787`.
+
+### Deploy
+
+```powershell
+npm.cmd test
+npm.cmd run cf:db:remote
+npm.cmd run cf:deploy
+```
+
+Configuration lives in `wrangler.jsonc`; D1 migrations live in `migrations/`.
+Copy `.dev.vars.example` to `.dev.vars` for local Cloudflare-only secrets. Set
+production secrets with `wrangler secret put`. Do not use a localhost notification
+URL in production.
+
