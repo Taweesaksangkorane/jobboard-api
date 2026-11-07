@@ -3,6 +3,9 @@
   "name": "team18-job-board-api",
   "main": "src/worker.js",
   "compatibility_date": "2026-11-02",
+  "vars": {
+    "NOTIFICATION_SERVICE_URL": "https://notification-hub-team20.siriwimonchst.workers.dev"
+  },
   "assets": {
     "directory": "./frontend/dist",
     "binding": "ASSETS",

@@ -92,7 +92,7 @@ async function handleApi(request, env, url) {
     if (method === 'DELETE') {
       await env.DB.batch([
         env.DB.prepare('DELETE FROM notifications WHERE related_application_id IN (SELECT application_id FROM applications WHERE job_id = ?)').bind(jobId),
-        env.DB.prepare("DELETE FROM integration_outbox WHERE json_extract(payload, '$.data.job_id') = ?").bind(Number(jobId)),
+        env.DB.prepare("DELETE FROM integration_outbox WHERE COALESCE(json_extract(payload, '$.metadata.job_id'), json_extract(payload, '$.data.job_id')) = ?").bind(Number(jobId)),
         env.DB.prepare('DELETE FROM jobs WHERE job_id = ?').bind(jobId),
       ]);
       return reply({ success: true, message: 'Job deleted successfully', job_id: Number(jobId) });
@@ -146,10 +146,20 @@ async function handleApi(request, env, url) {
     await env.DB.prepare('UPDATE applications SET status = ?, employer_feedback = COALESCE(?, employer_feedback), updated_at = CURRENT_TIMESTAMP WHERE application_id = ?').bind(input.status, input.employer_feedback || null, id).run();
     const data = await env.DB.prepare('SELECT * FROM applications WHERE application_id = ?').bind(id).first();
     const eventId = `app-status-${id}-${input.status}-${Date.now()}`;
-    const event = { event_id: eventId, event_type: 'APPLICATION_STATUS_CHANGED', timestamp: new Date().toISOString(), data: { application_id: data.application_id, student_id: data.student_id, job_id: data.job_id, old_status: application.status, new_status: data.status } };
+    const notificationData = { application_id: data.application_id, student_id: data.student_id, job_id: data.job_id, old_status: application.status, new_status: data.status };
+    const event = {
+      eventId,
+      eventType: 'APPLICATION_STATUS_CHANGED',
+      userId: String(data.student_id),
+      title: 'Job Application Status Updated',
+      message: `Your application status has changed from ${application.status} to ${data.status}`,
+      severity: 'medium',
+      timestamp: new Date().toISOString(),
+      metadata: notificationData,
+    };
     const targetUrl = env.NOTIFICATION_SERVICE_URL ? `${env.NOTIFICATION_SERVICE_URL.replace(/\/$/, '')}/api/webhooks/jobboard` : null;
     await env.DB.batch([
-      env.DB.prepare('INSERT INTO integration_outbox (event_id, event_type, target_url, payload) VALUES (?, ?, ?, ?)').bind(eventId, event.event_type, targetUrl, JSON.stringify(event)),
+      env.DB.prepare('INSERT INTO integration_outbox (event_id, event_type, target_url, payload) VALUES (?, ?, ?, ?)').bind(eventId, event.eventType, targetUrl, JSON.stringify(event)),
       env.DB.prepare('INSERT INTO notifications (recipient_id, title, message, type, related_application_id) VALUES (?, ?, ?, ?, ?)').bind(data.student_id, 'Application status updated', `Your application status is ${data.status}`, 'status_change', data.application_id),
     ]);
     const sent = await sendWebhook(env, targetUrl, event);
