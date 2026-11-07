@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "team18-job-board",
+  "name": "team18-job-board-api",
   "main": "src/worker.js",
   "compatibility_date": "2026-11-02",
   "assets": {
