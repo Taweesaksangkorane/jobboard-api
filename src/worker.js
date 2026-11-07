@@ -52,6 +52,11 @@ async function handleApi(request, env, url) {
   if (method === 'OPTIONS') return new Response(null, { status: 204 });
   if (method === 'GET' && path === '/api/health') return reply({ success: true, message: 'Job Board API is running on Cloudflare Workers' });
 
+  if (method === 'GET' && path === '/api/students') {
+    const { results } = await env.DB.prepare('SELECT student_id, name, email FROM students ORDER BY student_id').all();
+    return reply({ success: true, count: results.length, data: results });
+  }
+
   if (method === 'GET' && path === '/api/test-db') {
     const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM jobs').first();
     return reply({ success: true, message: 'Connected to Cloudflare D1 successfully', count: row.count });

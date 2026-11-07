@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
 import { Tooltip } from '../components/common/Tooltip';
 import { notificationService } from '../services/notificationService';
+import { studentService, type DemoStudent } from '../services/studentService';
 import {
   LayoutDashboard,
   Search,
@@ -22,11 +23,12 @@ import {
 
 export const StudentLayout: React.FC = () => {
   const { t } = useTranslation();
-  const { user, isLoadingAuth, isAuthenticated, isStudent, logout } = useAuth();
+  const { user, isLoadingAuth, isAuthenticated, isStudent, logout, selectDemoStudent } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [demoStudents, setDemoStudents] = useState<DemoStudent[]>([]);
 
   useEffect(() => {
     if (user?.id) {
@@ -39,6 +41,10 @@ export const StudentLayout: React.FC = () => {
         .catch(() => {});
     }
   }, [user?.id, location.pathname]);
+
+  useEffect(() => {
+    studentService.getStudents().then(setDemoStudents).catch(() => {});
+  }, []);
 
   // Route protection (wait for backend session validation first)
   if (isLoadingAuth) {
@@ -173,6 +179,28 @@ export const StudentLayout: React.FC = () => {
                 )}
               </div>
             </div>
+            <label className="mt-3 block text-[10px] font-semibold uppercase tracking-wide text-[#73758A]" htmlFor="demo-student">
+              Demo profile
+            </label>
+            <select
+              id="demo-student"
+              value={user?.id || ''}
+              onChange={(event) => {
+                const student = demoStudents.find((item) => String(item.student_id) === event.target.value);
+                if (student) selectDemoStudent({ id: String(student.student_id), name: student.name, email: student.email || '' });
+              }}
+              className="mt-1 w-full rounded-lg border border-[#E9EAF1] bg-white px-2 py-1.5 text-xs text-[#25243A] outline-none focus:border-[#6C4CE3]"
+            >
+              {!demoStudents.some((student) => String(student.student_id) === user?.id) && user?.id && (
+                <option value={user.id}>{user.name} (ID {user.id})</option>
+              )}
+              {demoStudents.map((student) => (
+                <option key={student.student_id} value={student.student_id}>
+                  {student.name} (ID {student.student_id})
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[10px] leading-4 text-[#73758A]">Demo only — this is not a secure login.</p>
           </div>
 
           {/* Navigation Links */}

@@ -10,6 +10,7 @@ type AuthValue = {
   logout: () => void;
   updateProfile: (patch: Partial<User>) => Promise<User>;
   selectRole: (role: UserRole) => void;
+  selectDemoStudent: (student: Pick<User, 'id' | 'name' | 'email'>) => void;
 };
 
 const users: Record<UserRole, User> = {
@@ -21,7 +22,11 @@ const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const initialRole = (localStorage.getItem('demoRole') as UserRole) || 'student';
-  const [user, setUser] = useState<User | null>(users[initialRole] || users.student);
+  const savedStudent = localStorage.getItem('demoStudent');
+  const initialStudent = savedStudent ? JSON.parse(savedStudent) as Pick<User, 'id' | 'name' | 'email'> : users.student;
+  const [user, setUser] = useState<User | null>(initialRole === 'student'
+    ? { ...initialStudent, role: 'student', studentId: initialStudent.id }
+    : users[initialRole]);
 
   const value = useMemo<AuthValue>(() => ({
     user,
@@ -38,6 +43,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     selectRole: (role) => {
       localStorage.setItem('demoRole', role);
       setUser(users[role]);
+    },
+    selectDemoStudent: (student) => {
+      const selected = { ...student, role: 'student' as const, studentId: student.id };
+      localStorage.setItem('demoRole', 'student');
+      localStorage.setItem('demoStudent', JSON.stringify(student));
+      setUser(selected);
     },
   }), [user]);
 
