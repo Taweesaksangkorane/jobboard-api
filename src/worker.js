@@ -183,11 +183,27 @@ async function handleApi(request, env, url) {
   if (method === 'POST' && path === '/api/webhooks/notification') {
     if (!env.WEBHOOK_SECRET || request.headers.get('x-webhook-secret') !== env.WEBHOOK_SECRET) return reply({ success: false, error: 'Invalid webhook secret' }, 401);
     const input = await bodyOf(request);
-    if (!input.event_id || !input.event_type) return reply({ success: false, error: 'event_id and event_type are required' }, 400);
-    const existing = await env.DB.prepare('SELECT event_id FROM integration_events WHERE event_id = ?').bind(input.event_id).first();
-    if (existing) return reply({ success: true, duplicate: true, event_id: input.event_id, message: 'Event already processed' });
-    await env.DB.prepare('INSERT INTO integration_events (event_id, event_type, source, payload) VALUES (?, ?, ?, ?)').bind(input.event_id, input.event_type, 'notification-service', JSON.stringify(input)).run();
-    return reply({ success: true, message: 'Webhook received successfully', event_id: input.event_id, stored: true, received_at: new Date().toISOString() });
+    const eventId = input.event_id || input.eventId;
+    const eventType = input.event_type || input.eventType || input.type;
+    const recipientValue = input.userId ?? input.user_id ?? input.student_id ?? input.recipient_id ?? input.metadata?.userId ?? input.metadata?.user_id ?? input.metadata?.student_id;
+    const recipientId = Number(recipientValue);
+    const message = input.message || input.description || input.content;
+    const relatedApplicationValue = input.related_application_id ?? input.relatedApplicationId ?? input.application_id ?? input.applicationId ?? input.metadata?.application_id ?? input.metadata?.applicationId;
+    const relatedApplicationId = Number.isInteger(Number(relatedApplicationValue)) ? Number(relatedApplicationValue) : null;
+
+    if (!eventId || !eventType) return reply({ success: false, error: 'event_id/eventId and event_type/eventType are required' }, 400);
+    if (!Number.isInteger(recipientId) || recipientId <= 0) return reply({ success: false, error: 'A positive integer userId, user_id, student_id, or recipient_id is required' }, 400);
+    if (!message) return reply({ success: false, error: 'message, description, or content is required' }, 400);
+
+    const existing = await env.DB.prepare('SELECT event_id FROM integration_events WHERE event_id = ?').bind(eventId).first();
+    if (existing) return reply({ success: true, duplicate: true, event_id: eventId, message: 'Event already processed' });
+
+    const notificationTitle = input.title || 'Notification from Notification Hub';
+    await env.DB.batch([
+      env.DB.prepare('INSERT INTO integration_events (event_id, event_type, source, payload) VALUES (?, ?, ?, ?)').bind(eventId, eventType, 'notification-service', JSON.stringify(input)),
+      env.DB.prepare('INSERT INTO notifications (recipient_id, title, message, type, related_application_id) VALUES (?, ?, ?, ?, ?)').bind(recipientId, notificationTitle, message, eventType, relatedApplicationId),
+    ]);
+    return reply({ success: true, message: 'Webhook received and notification created', event_id: eventId, stored: true, notification_created: true, recipient_id: recipientId, received_at: new Date().toISOString() });
   }
 
   if (method === 'POST' && path === '/api/integration/notifications') {
