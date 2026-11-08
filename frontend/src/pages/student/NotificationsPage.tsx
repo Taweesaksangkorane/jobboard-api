@@ -46,7 +46,18 @@ export const NotificationsPage: React.FC = () => {
     }
   };
 
-  const handleNotificationClick = (item: NotificationItem) => {
+  const handleNotificationClick = async (item: NotificationItem) => {
+    if (user?.id && !item.read) {
+      try {
+        await notificationService.markAsRead(item.id, user.id);
+        setNotifications((current) => current.map((notification) => (
+          notification.id === item.id ? { ...notification, read: true } : notification
+        )));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : t('common:feedback.errorMessage'));
+        return;
+      }
+    }
     if (item.related_application_id) {
       navigate(`/student/applications/${item.related_application_id}`);
     } else {
@@ -54,8 +65,14 @@ export const NotificationsPage: React.FC = () => {
     }
   };
 
-  const markAllRead = () => {
-    setNotifications(notifications.map((n) => ({ ...n, read: true })));
+  const markAllRead = async () => {
+    if (!user?.id) return;
+    try {
+      await notificationService.markAllAsRead(user.id);
+      setNotifications((current) => current.map((notification) => ({ ...notification, read: true })));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('common:feedback.errorMessage'));
+    }
   };
 
   return (

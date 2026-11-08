@@ -185,6 +185,28 @@ async function handleApi(request, env, url) {
     return reply({ success: true, count: results.length, data: results.map((row) => ({ ...row, id: String(row.id), read: Boolean(row.read) })) });
   }
 
+  if (method === 'PATCH' && path === '/api/notifications/read-all') {
+    const input = await bodyOf(request);
+    const recipientId = Number(input.recipient_id);
+    if (!Number.isInteger(recipientId) || recipientId <= 0) {
+      return reply({ success: false, error: 'A positive integer recipient_id is required' }, 400);
+    }
+    const result = await env.DB.prepare('UPDATE notifications SET read = 1 WHERE recipient_id = ? AND read = 0').bind(recipientId).run();
+    return reply({ success: true, data: { updated: result.meta.changes || 0 } });
+  }
+
+  if (method === 'PATCH' && (match = path.match(/^\/api\/notifications\/(\d+)\/read$/))) {
+    const input = await bodyOf(request);
+    const recipientId = Number(input.recipient_id);
+    if (!Number.isInteger(recipientId) || recipientId <= 0) {
+      return reply({ success: false, error: 'A positive integer recipient_id is required' }, 400);
+    }
+    const notification = await env.DB.prepare('SELECT notification_id FROM notifications WHERE notification_id = ? AND recipient_id = ?').bind(match[1], recipientId).first();
+    if (!notification) return reply({ success: false, error: 'Notification not found' }, 404);
+    await env.DB.prepare('UPDATE notifications SET read = 1 WHERE notification_id = ?').bind(match[1]).run();
+    return reply({ success: true, data: { id: String(match[1]), read: true } });
+  }
+
   if (method === 'POST' && path === '/api/webhooks/notification') {
     if (!env.WEBHOOK_SECRET || request.headers.get('x-webhook-secret') !== env.WEBHOOK_SECRET) return reply({ success: false, error: 'Invalid webhook secret' }, 401);
     const input = await bodyOf(request);
