@@ -11,6 +11,7 @@ type AuthValue = {
   updateProfile: (patch: Partial<User>) => Promise<User>;
   selectRole: (role: UserRole) => void;
   selectDemoStudent: (student: Pick<User, 'id' | 'name' | 'email'>) => void;
+  selectDemoEmployer: (employer: Pick<User, 'id' | 'companyName'>) => void;
 };
 
 const users: Record<UserRole, User> = {
@@ -21,12 +22,12 @@ const users: Record<UserRole, User> = {
 const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const initialRole = (localStorage.getItem('demoRole') as UserRole) || 'student';
   const savedStudent = localStorage.getItem('demoStudent');
+  const savedEmployer = localStorage.getItem('demoEmployer');
   const initialStudent = savedStudent ? JSON.parse(savedStudent) as Pick<User, 'id' | 'name' | 'email'> : users.student;
-  const [user, setUser] = useState<User | null>(initialRole === 'student'
-    ? { ...initialStudent, role: 'student', studentId: initialStudent.id }
-    : users[initialRole]);
+  const initialEmployer = savedEmployer ? JSON.parse(savedEmployer) as Pick<User, 'id' | 'companyName'> : users.employer;
+  // This is a demo selector, not persistent authentication. Always start signed out.
+  const [user, setUser] = useState<User | null>(null);
 
   const value = useMemo<AuthValue>(() => ({
     user,
@@ -34,7 +35,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: Boolean(user),
     isStudent: user?.role === 'student',
     isEmployer: user?.role === 'employer',
-    logout: () => setUser(null),
+    logout: () => {
+      localStorage.removeItem('demoRole');
+      setUser(null);
+    },
     updateProfile: async (patch) => {
       const updated = { ...(user || users.student), ...patch };
       setUser(updated);
@@ -42,12 +46,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     selectRole: (role) => {
       localStorage.setItem('demoRole', role);
-      setUser(users[role]);
+      if (role === 'student') {
+        setUser({ ...initialStudent, role: 'student', studentId: initialStudent.id });
+      } else {
+        setUser({ ...users.employer, ...initialEmployer, name: initialEmployer.companyName || users.employer.name, role: 'employer' });
+      }
     },
     selectDemoStudent: (student) => {
       const selected = { ...student, role: 'student' as const, studentId: student.id };
       localStorage.setItem('demoRole', 'student');
       localStorage.setItem('demoStudent', JSON.stringify(student));
+      setUser(selected);
+    },
+    selectDemoEmployer: (employer) => {
+      const selected = { ...users.employer, ...employer, name: employer.companyName || users.employer.name, role: 'employer' as const };
+      localStorage.setItem('demoRole', 'employer');
+      localStorage.setItem('demoEmployer', JSON.stringify(employer));
       setUser(selected);
     },
   }), [user]);

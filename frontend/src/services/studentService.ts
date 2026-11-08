@@ -6,6 +6,12 @@ export type DemoStudent = {
   email: string | null;
 };
 
+export type DemoEmployer = {
+  employer_id: number;
+  company_name: string;
+};
+
 export const studentService = {
   getStudents: () => apiRequest<DemoStudent[]>('/api/students'),
+  getEmployers: () => apiRequest<DemoEmployer[]>('/api/employers'),
 };

@@ -21,7 +21,7 @@ export const PublicLayout: React.FC = () => {
       <header className="sticky top-0 z-30 border-b border-[#E9EAF1] bg-white/95 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2.5">
+          <Link to={isAuthenticated ? '/' : '/login'} className="flex items-center gap-2.5">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#6C4CE3] text-white shadow-sm shadow-[#6C4CE3]/30">
               <Briefcase className="h-5 w-5" />
             </div>
@@ -36,7 +36,7 @@ export const PublicLayout: React.FC = () => {
           {/* Desktop Navigation Links */}
           <nav className="hidden md:flex items-center gap-7">
             <Link
-              to="/"
+              to={isAuthenticated ? '/' : '/login'}
               className={`text-sm font-medium transition ${
                 isActive('/') ? 'text-[#6C4CE3]' : 'text-[#73758A] hover:text-[#25243A]'
               }`}
@@ -94,7 +94,7 @@ export const PublicLayout: React.FC = () => {
                     type="button"
                     onClick={() => {
                       logout();
-                      navigate('/');
+                      navigate('/login');
                     }}
                     className="text-xs text-[#73758A] hover:text-[#E05252] transition font-medium cursor-pointer"
                   >

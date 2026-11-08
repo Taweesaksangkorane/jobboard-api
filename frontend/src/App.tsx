@@ -56,7 +56,7 @@ export default function App() {
           <Routes>
             {/* Public Routes */}
             <Route element={<PublicLayout />}>
-              <Route path="/" element={<HomePage />} />
+              <Route path="/" element={<Navigate to="/login" replace />} />
               <Route path="/jobs" element={<JobSearchPage />} />
               <Route path="/jobs/:id" element={<JobDetailsPage />} />
               <Route path="/login" element={<DemoAccessPage />} />

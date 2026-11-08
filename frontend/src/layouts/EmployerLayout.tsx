@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
+import { studentService, type DemoEmployer } from '../services/studentService';
 import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { Tooltip } from '../components/common/Tooltip';
@@ -10,7 +11,6 @@ import {
   Briefcase,
   PlusCircle,
   Users,
-  Building,
   LogOut,
   Menu,
   X,
@@ -21,10 +21,15 @@ import {
 
 export const EmployerLayout: React.FC = () => {
   const { t } = useTranslation();
-  const { user, isLoadingAuth, isAuthenticated, isEmployer, logout } = useAuth();
+  const { user, isLoadingAuth, isAuthenticated, isEmployer, logout, selectDemoEmployer } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [demoEmployers, setDemoEmployers] = useState<DemoEmployer[]>([]);
+
+  useEffect(() => {
+    studentService.getEmployers().then(setDemoEmployers).catch(() => {});
+  }, []);
 
   // Route protection (wait for backend session validation first)
   if (isLoadingAuth) {
@@ -78,7 +83,6 @@ export const EmployerLayout: React.FC = () => {
     { label: t('employer:manageJobs.title'), path: '/employer/jobs', icon: <Briefcase className="h-5 w-5" /> },
     { label: t('employer:jobForm.createTitle'), path: '/employer/jobs/create', icon: <PlusCircle className="h-5 w-5" /> },
     { label: t('employer:applicants.title'), path: '/employer/applicants', icon: <Users className="h-5 w-5" /> },
-    { label: t('employer:profile.title'), path: '/employer/profile', icon: <Building className="h-5 w-5" /> },
   ];
 
   const handleLogout = () => {
@@ -151,6 +155,28 @@ export const EmployerLayout: React.FC = () => {
                 </span>
               </div>
             </div>
+            <label className="mt-3 block text-[10px] font-semibold uppercase tracking-wide text-[#73758A]" htmlFor="demo-employer">
+              Demo company
+            </label>
+            <select
+              id="demo-employer"
+              value={user?.id || ''}
+              onChange={(event) => {
+                const employer = demoEmployers.find((item) => String(item.employer_id) === event.target.value);
+                if (employer) selectDemoEmployer({ id: String(employer.employer_id), companyName: employer.company_name });
+              }}
+              className="mt-1 w-full rounded-lg border border-[#E9EAF1] bg-white px-2 py-1.5 text-xs text-[#25243A] outline-none focus:border-[#6C4CE3]"
+            >
+              {!demoEmployers.some((employer) => String(employer.employer_id) === user?.id) && user?.id && (
+                <option value={user.id}>{user.companyName || user.name} (ID {user.id})</option>
+              )}
+              {demoEmployers.map((employer) => (
+                <option key={employer.employer_id} value={employer.employer_id}>
+                  {employer.company_name} (ID {employer.employer_id})
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[10px] leading-4 text-[#73758A]">Demo only — this is not a secure login.</p>
           </div>
 
           {/* Navigation Links */}
@@ -233,6 +259,7 @@ export const EmployerLayout: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-3">
+              <span className="hidden rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700 sm:inline">DEMO MODE</span>
               <LanguageSwitcher />
 
               <Tooltip content={t('common:tooltips.createJob')}>

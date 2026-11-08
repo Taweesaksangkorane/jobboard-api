@@ -57,13 +57,18 @@ async function handleApi(request, env, url) {
     return reply({ success: true, count: results.length, data: results });
   }
 
+  if (method === 'GET' && path === '/api/employers') {
+    const { results } = await env.DB.prepare("SELECT employer_id, company_name FROM employers WHERE approval_status = 'approved' ORDER BY company_name").all();
+    return reply({ success: true, count: results.length, data: results });
+  }
+
   if (method === 'GET' && path === '/api/test-db') {
     const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM jobs').first();
     return reply({ success: true, message: 'Connected to Cloudflare D1 successfully', count: row.count });
   }
 
   if (method === 'GET' && path === '/api/jobs') {
-    const clauses = [];
+    const clauses = ["e.approval_status = 'approved'"];
     const values = [];
     for (const key of ['province', 'category', 'status']) {
       if (url.searchParams.get(key)) { clauses.push(`j.${key} = ?`); values.push(url.searchParams.get(key)); }
@@ -91,7 +96,7 @@ async function handleApi(request, env, url) {
 
   if ((match = path.match(/^\/api\/jobs\/(\d+)$/))) {
     const jobId = match[1];
-    const existing = await env.DB.prepare('SELECT * FROM jobs WHERE job_id = ?').bind(jobId).first();
+    const existing = await env.DB.prepare("SELECT j.* FROM jobs j JOIN employers e ON e.employer_id = j.employer_id WHERE j.job_id = ? AND e.approval_status = 'approved'").bind(jobId).first();
     if (!existing) return reply({ success: false, error: 'Job not found' }, 404);
     if (method === 'GET') return reply({ success: true, data: existing });
     if (method === 'DELETE') {

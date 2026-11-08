@@ -10,8 +10,6 @@ import {
   LayoutDashboard,
   Search,
   FileText,
-  User,
-  Wrench,
   Bell,
   LogOut,
   Briefcase,
@@ -31,15 +29,25 @@ export const StudentLayout: React.FC = () => {
   const [demoStudents, setDemoStudents] = useState<DemoStudent[]>([]);
 
   useEffect(() => {
-    if (user?.id) {
+    let cancelled = false;
+    const refreshUnreadCount = () => {
+      if (!user?.id) {
+        setUnreadCount(0);
+        return;
+      }
       notificationService
         .getNotifications(user.id)
         .then((items) => {
-          const unread = items.filter((n) => !n.read).length;
-          setUnreadCount(unread);
+          if (!cancelled) setUnreadCount(items.filter((n) => !n.read).length);
         })
         .catch(() => {});
-    }
+    };
+    refreshUnreadCount();
+    const interval = window.setInterval(refreshUnreadCount, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, [user?.id, location.pathname]);
 
   useEffect(() => {
@@ -97,8 +105,6 @@ export const StudentLayout: React.FC = () => {
     { label: t('nav.dashboard'), path: '/student/dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
     { label: t('nav.findJobs'), path: '/jobs', icon: <Search className="h-5 w-5" /> },
     { label: t('student:applications.title'), path: '/student/applications', icon: <FileText className="h-5 w-5" /> },
-    { label: t('student:profile.title'), path: '/student/profile', icon: <User className="h-5 w-5" /> },
-    { label: t('student:skills.title'), path: '/student/skills', icon: <Wrench className="h-5 w-5" /> },
     {
       label: t('student:notifications.title'),
       path: '/student/notifications',
@@ -268,6 +274,7 @@ export const StudentLayout: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-3">
+              <span className="hidden rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700 sm:inline">DEMO MODE</span>
               <LanguageSwitcher />
 
               <Tooltip content={t('common:tooltips.search')}>

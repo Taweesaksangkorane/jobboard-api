@@ -26,15 +26,17 @@ export const NotificationsPage: React.FC = () => {
 
   useEffect(() => {
     loadNotifications();
+    const interval = window.setInterval(() => { void loadNotifications(false); }, 15_000);
+    return () => window.clearInterval(interval);
   }, [user?.id]);
 
-  const loadNotifications = async () => {
+  const loadNotifications = async (showLoading = true) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       setError(null);
       if (!user?.id) {
         setNotifications([]);
-        setLoading(false);
+      if (showLoading) setLoading(false);
         return;
       }
       const data = await notificationService.getNotifications(user.id);
@@ -42,7 +44,7 @@ export const NotificationsPage: React.FC = () => {
     } catch (err) {
       setError(err instanceof Error ? err.message : t('common:feedback.errorMessage'));
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
