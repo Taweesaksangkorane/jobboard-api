@@ -163,10 +163,10 @@ async function handleApi(request, env, url) {
       metadata: notificationData,
     };
     const targetUrl = env.NOTIFICATION_SERVICE_URL ? `${env.NOTIFICATION_SERVICE_URL.replace(/\/$/, '')}/api/webhooks/jobboard` : null;
-    await env.DB.batch([
-      env.DB.prepare('INSERT INTO integration_outbox (event_id, event_type, target_url, payload) VALUES (?, ?, ?, ?)').bind(eventId, event.eventType, targetUrl, JSON.stringify(event)),
-      env.DB.prepare('INSERT INTO notifications (recipient_id, title, message, type, related_application_id) VALUES (?, ?, ?, ?, ?)').bind(data.student_id, 'Application status updated', `Your application status is ${data.status}`, 'status_change', data.application_id),
-    ]);
+    // Notification Service is the notification source of truth. It will call
+    // /api/webhooks/notification back after processing this outbox event.
+    await env.DB.prepare('INSERT INTO integration_outbox (event_id, event_type, target_url, payload) VALUES (?, ?, ?, ?)')
+      .bind(eventId, event.eventType, targetUrl, JSON.stringify(event)).run();
     const sent = await sendWebhook(env, targetUrl, event);
     await env.DB.prepare('UPDATE integration_outbox SET status = ?, attempt_count = 1, last_error = ?, sent_at = ? WHERE event_id = ?').bind(sent.success ? 'sent' : 'pending', sent.error || null, sent.success ? new Date().toISOString() : null, eventId).run();
     return reply({ success: true, message: 'Application status updated successfully', data, integration: { event_id: eventId, notification_sent: sent.success, notification_status: sent.success ? 'sent' : 'pending' } });
