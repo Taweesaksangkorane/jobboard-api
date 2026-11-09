@@ -84,6 +84,17 @@ test('job creation rejects malformed and incomplete input before database writes
   assert.equal((await incomplete.json()).error, 'Missing required fields');
 });
 
+test('application submission rejects a contact number that is not exactly ten Thai digits', async () => {
+  const cookie = await createTestCookie({ id: 4, role: 'student', email: 'student@example.com', name: 'Test Student' });
+  const response = await api('/api/jobs/6/applications', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ student_phone: '085123456789' }),
+  });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /exactly 10 digits/);
+});
+
 test('notification webhook rejects a missing or incorrect shared secret', async () => {
   const request = { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ eventId: 'event-1', eventType: 'TEST', userId: 4, message: 'test' }) };
   assert.equal((await api('/api/webhooks/notification', request)).status, 401);

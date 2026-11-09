@@ -102,6 +102,12 @@ function secretsMatch(provided, expected) {
   return difference === 0;
 }
 
+function isValidThaiPhone(phone) {
+  if (typeof phone !== 'string') return false;
+  const digits = phone.replace(/[\s-]/g, '');
+  return /^0\d{9}$/.test(digits);
+}
+
 function applySecurityHeaders(request, response, env) {
   const headers = new Headers(response.headers);
   const requestOrigin = new URL(request.url).origin;
@@ -296,6 +302,7 @@ async function handleApi(request, env, url) {
     const jobId = match[1];
     const input = await bodyOf(request);
     if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
+    if (!isValidThaiPhone(input.student_phone)) return reply({ success: false, error: 'A Thai contact phone number must contain exactly 10 digits and start with 0' }, 400);
     const student = await env.DB.prepare('SELECT * FROM students WHERE student_id = ?').bind(auth.session.id).first();
     if (!student) return reply({ success: false, error: 'Student not found' }, 404);
     const job = await env.DB.prepare('SELECT * FROM jobs WHERE job_id = ?').bind(jobId).first();

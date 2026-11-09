@@ -11,6 +11,16 @@ A deployable academic job-board demonstration built entirely on Cloudflare.
 
 The Worker serves the React application and API from one origin. D1 stores fictional demo employers, students, jobs, applications, notifications, webhook events, and an outbound retry outbox. A Cloudflare Cron Trigger retries pending notification deliveries each minute.
 
+## System architecture
+
+```text
+React/Vite browser UI -> Cloudflare Worker API -> Cloudflare D1
+                                  |
+                         Notification Hub webhook
+```
+
+User sessions and partner webhooks use different authentication mechanisms: signed role cookies protect Student/Employer actions, while `x-webhook-secret` protects service-to-service callbacks.
+
 ## Run locally
 
 ```powershell
@@ -90,6 +100,24 @@ Required inbound fields: `eventId` (or `event_id`), `eventType` (or `event_type`
 4. Wrangler deployment dry-run.
 
 Use [docs/MANUAL_TEST_EVIDENCE.md](docs/MANUAL_TEST_EVIDENCE.md) for the human-verification record. The importable Postman collection and environment are in `postman/`.
+
+## ตรวจ Automated Tests เพิ่มเติม
+
+จากไฟล์ `tests/worker.test.mjs` ปัจจุบันมี Test Cases 12 กรณี ครอบคลุมเรื่องต่อไปนี้
+
+- Health endpoint และ Security Headers
+- CORS ปฏิเสธ Origin ที่ไม่ได้รับอนุญาต
+- Authorization สำหรับ Employer และ Student
+- Signed Session และการแยก Session ตามบทบาท
+- Input Validation ก่อนเขียน Database รวมถึงเบอร์โทรไทย 10 หลัก
+- Webhook Secret Authentication
+- Webhook Payload Validation
+- SQL Parameter Binding สำหรับการค้นหางาน
+- การปฏิเสธ Keyword ที่ยาวเกินกำหนด
+
+## Development process, Git, and AI usage
+
+ดู [docs/DEVELOPMENT_AND_AI_EVIDENCE.md](docs/DEVELOPMENT_AND_AI_EVIDENCE.md) สำหรับสถาปัตยกรรม, ขั้นตอนทำงาน, ตารางทีมที่ต้องกรอกก่อนประเมิน, คำสั่งแสดง Git history, และคำอธิบายการใช้ AI อย่างโปร่งใส
 
 ## Security and PDPA boundary
 

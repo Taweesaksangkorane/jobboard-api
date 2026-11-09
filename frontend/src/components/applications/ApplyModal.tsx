@@ -45,6 +45,10 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({ job, isOpen, onClose, on
       setErrorMessage(t('applyModal.consentRequired'));
       return;
     }
+    if (!/^0\d{9}$/.test(studentPhone.replace(/[\s-]/g, ''))) {
+      setErrorMessage('Please enter a Thai contact phone number with exactly 10 digits, starting with 0.');
+      return;
+    }
 
     try {
       setIsSubmitting(true);
@@ -128,9 +132,14 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({ job, isOpen, onClose, on
             />
             <Input
               label={t('applyModal.phoneLabel')}
+              type="tel"
               required
               value={studentPhone}
               onChange={(e) => setStudentPhone(e.target.value)}
+              inputMode="numeric"
+              maxLength={12}
+              pattern="0[0-9 -]{9,11}"
+              helperText="10 digits, for example 085-456-5589"
               placeholder="08X-XXX-XXXX"
             />
           </div>
