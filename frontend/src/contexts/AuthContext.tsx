@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { User } from '../types';
 import { authService } from '../services/authService';
 
@@ -20,7 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
-  const refreshSession = async (): Promise<User | null> => {
+  const refreshSession = useCallback(async (): Promise<User | null> => {
     try {
       const account = await authService.me();
       setUser(account);
@@ -29,7 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       return null;
     }
-  };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -37,7 +37,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (active) setIsLoadingAuth(false);
     });
     return () => { active = false; };
-  }, []);
+  }, [refreshSession]);
+
+  useEffect(() => {
+    const syncSession = () => { void refreshSession(); };
+    const syncOnVisible = () => {
+      if (document.visibilityState === 'visible') syncSession();
+    };
+    window.addEventListener('focus', syncSession);
+    window.addEventListener('jobboard:session-changed', syncSession);
+    document.addEventListener('visibilitychange', syncOnVisible);
+    return () => {
+      window.removeEventListener('focus', syncSession);
+      window.removeEventListener('jobboard:session-changed', syncSession);
+      document.removeEventListener('visibilitychange', syncOnVisible);
+    };
+  }, [refreshSession]);
 
   const value = useMemo<AuthValue>(() => ({
     user,
@@ -59,7 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(updated);
       return updated;
     },
-  }), [isLoadingAuth, user]);
+  }), [isLoadingAuth, refreshSession, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

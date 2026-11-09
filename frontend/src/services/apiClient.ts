@@ -17,6 +17,9 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   });
 
   const body = (await response.json().catch(() => null)) as ApiEnvelope<T> | null;
+  if (!path.startsWith('/api/auth/') && (response.status === 401 || response.status === 403) && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('jobboard:session-changed'));
+  }
   if (!response.ok || !body?.success) {
     throw new Error(body?.error || `API request failed (${response.status})`);
   }
