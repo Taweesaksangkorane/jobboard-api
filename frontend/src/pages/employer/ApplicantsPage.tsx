@@ -48,7 +48,7 @@ export const ApplicantsPage: React.FC = () => {
         (j) =>
           !j.employer_id ||
           j.employer_id === employerId ||
-          (employerId === 'emp-1' && Boolean(j.is_demo))
+          ((employerId === 'emp-1' || employerId === '1') && Boolean(j.is_demo))
       );
       setApplicants(applicantList);
       setJobs(employerJobs);

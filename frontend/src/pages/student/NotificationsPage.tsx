@@ -39,7 +39,7 @@ export const NotificationsPage: React.FC = () => {
       if (showLoading) setLoading(false);
         return;
       }
-      const data = await notificationService.getNotifications(user.id);
+      const data = await notificationService.getNotifications();
       setNotifications(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('common:feedback.errorMessage'));
@@ -51,7 +51,7 @@ export const NotificationsPage: React.FC = () => {
   const handleNotificationClick = async (item: NotificationItem) => {
     if (user?.id && !item.read) {
       try {
-        await notificationService.markAsRead(item.id, user.id);
+        await notificationService.markAsRead(item.id);
         setNotifications((current) => current.map((notification) => (
           notification.id === item.id ? { ...notification, read: true } : notification
         )));
@@ -70,7 +70,7 @@ export const NotificationsPage: React.FC = () => {
   const markAllRead = async () => {
     if (!user?.id) return;
     try {
-      await notificationService.markAllAsRead(user.id);
+      await notificationService.markAllAsRead();
       setNotifications((current) => current.map((notification) => ({ ...notification, read: true })));
     } catch (err) {
       setError(err instanceof Error ? err.message : t('common:feedback.errorMessage'));

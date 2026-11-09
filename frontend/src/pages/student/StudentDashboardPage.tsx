@@ -50,7 +50,7 @@ export const StudentDashboardPage: React.FC = () => {
       }
 
       const [userApps, allJobs] = await Promise.all([
-        applicationService.getMyApplications(studentId).catch(() => []),
+        applicationService.getMyApplications().catch(() => []),
         jobService.getJobs({ status: 'open' }).catch(() => []),
       ]);
 

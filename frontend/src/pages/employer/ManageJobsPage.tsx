@@ -43,7 +43,7 @@ export const ManageJobsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const isDemoEmployer = user?.id === 'emp-1';
+  const isDemoEmployer = user?.id === 'emp-1' || user?.id === '1';
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -72,7 +72,7 @@ export const ManageJobsPage: React.FC = () => {
             (j) =>
               !j.employer_id ||
               j.employer_id === user.id ||
-              (user.id === 'emp-1' && Boolean(j.is_demo))
+              ((user.id === 'emp-1' || user.id === '1') && Boolean(j.is_demo))
           )
         : data;
       setJobs(visibleJobs);

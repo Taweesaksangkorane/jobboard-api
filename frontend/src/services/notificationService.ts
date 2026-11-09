@@ -2,21 +2,21 @@ import { NotificationItem } from '../types';
 import { apiRequest } from './apiClient';
 
 export const notificationService = {
-  async getNotifications(recipientId: string): Promise<NotificationItem[]> {
-    return apiRequest<NotificationItem[]>(`/api/notifications?recipient_id=${encodeURIComponent(recipientId)}`);
+  async getNotifications(): Promise<NotificationItem[]> {
+    return apiRequest<NotificationItem[]>('/api/notifications');
   },
 
-  async markAsRead(notificationId: string, recipientId: string): Promise<void> {
+  async markAsRead(notificationId: string): Promise<void> {
     await apiRequest(`/api/notifications/${encodeURIComponent(notificationId)}/read`, {
       method: 'PATCH',
-      body: JSON.stringify({ recipient_id: recipientId }),
+      body: JSON.stringify({}),
     });
   },
 
-  async markAllAsRead(recipientId: string): Promise<void> {
+  async markAllAsRead(): Promise<void> {
     await apiRequest('/api/notifications/read-all', {
       method: 'PATCH',
-      body: JSON.stringify({ recipient_id: recipientId }),
+      body: JSON.stringify({}),
     });
   },
 };

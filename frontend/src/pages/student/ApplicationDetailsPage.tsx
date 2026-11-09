@@ -36,7 +36,7 @@ export const ApplicationDetailsPage: React.FC = () => {
       setError(null);
       let found: Application | undefined;
       if (user?.id) {
-        const myApps = await applicationService.getMyApplications(user.id);
+        const myApps = await applicationService.getMyApplications();
         found = myApps.find((a) => a.id === appId);
       }
 

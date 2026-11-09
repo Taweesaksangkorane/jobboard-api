@@ -43,7 +43,7 @@ export const MyApplicationsPage: React.FC = () => {
         setLoading(false);
         return;
       }
-      const data = await applicationService.getMyApplications(studentId);
+      const data = await applicationService.getMyApplications();
       setApplications(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('common:feedback.errorMessage'));

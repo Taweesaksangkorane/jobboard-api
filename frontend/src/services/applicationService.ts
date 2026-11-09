@@ -33,15 +33,18 @@ function normalizeApplication(app: BackendApplication): Application {
 }
 
 export const applicationService = {
-  async applyForJob(jobId: string, input: Partial<Application> & { student_id: string }): Promise<Application> {
+  async applyForJob(jobId: string, input: Partial<Application>): Promise<Application> {
+    // student_id is determined by the server session — do not send it from the client
+    const { student_id: _ignored, ...payload } = input as Record<string, unknown>;
     return normalizeApplication(await apiRequest<BackendApplication>(`/api/jobs/${jobId}/applications`, {
       method: 'POST',
-      body: JSON.stringify(input),
+      body: JSON.stringify(payload),
     }));
   },
 
-  async getMyApplications(studentId: string): Promise<Application[]> {
-    const data = await apiRequest<BackendApplication[]>(`/api/applications/me?student_id=${encodeURIComponent(studentId)}`);
+  async getMyApplications(): Promise<Application[]> {
+    // Backend uses the session cookie to identify the student
+    const data = await apiRequest<BackendApplication[]>('/api/applications/me');
     return data.map(normalizeApplication);
   },
 
@@ -63,6 +66,7 @@ export const applicationService = {
   },
 
   async getEmployerApplicants(employerId?: string): Promise<Application[]> {
+    // Backend uses the session cookie to verify the employer owns these applications
     if (!employerId) return [];
     const data = await apiRequest<BackendApplication[]>(`/api/employers/${encodeURIComponent(employerId)}/applications`);
     return data.map(normalizeApplication);

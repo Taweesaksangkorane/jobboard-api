@@ -16,7 +16,7 @@ This is an academic demonstration environment. Seeded employers, students, jobs,
 
 ## Explicit limitation
 
-The role/profile picker is a demo convenience stored in browser local storage, not production authentication or authorization. The system must not receive real personal data until real identity authentication, server-side authorization, consent/versioning, retention/deletion workflow, audit logging, and a reviewed privacy notice are implemented.
+The demo login is verified by the Worker against Cloudflare Secrets. The Worker issues a short-lived signed `HttpOnly`, `Secure`, `SameSite=Lax` session cookie and enforces Student/Employer ownership on protected API routes. This is suitable for a controlled academic demo, not a production identity service. The system must not receive real personal data until email verification, password-reset handling, consent/versioning, retention/deletion workflow, audit logging, rate limiting, and a reviewed privacy notice are implemented.
 
 ## PDPA demonstration talking points
 

@@ -21,7 +21,7 @@ interface ApplyModalProps {
 
 export const ApplyModal: React.FC<ApplyModalProps> = ({ job, isOpen, onClose, onSuccess }) => {
   const { t, i18n } = useTranslation();
-  const { user } = useAuth();
+  const { user, refreshSession } = useAuth();
   const navigate = useNavigate();
   const localizedTitle = getLocalizedJobTitle(job, i18n.language);
 
@@ -49,6 +49,12 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({ job, isOpen, onClose, on
     try {
       setIsSubmitting(true);
       setErrorMessage(null);
+
+      const currentUser = await refreshSession();
+      if (!currentUser || currentUser.role !== 'student') {
+        setErrorMessage('Please sign in again with the Student demo account before applying.');
+        return;
+      }
 
       await applicationService.applyForJob(job.id, {
         student_id: user.id,

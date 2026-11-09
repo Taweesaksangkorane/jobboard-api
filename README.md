@@ -35,18 +35,30 @@ npx.cmd wrangler secret put WEBHOOK_SECRET
 npx.cmd wrangler secret put EVENT_WEBHOOK_SECRET
 ```
 
+Configure the two demo login accounts and the server-side session signing key outside source control as well:
+
+```powershell
+npx.cmd wrangler secret put AUTH_SESSION_SECRET
+npx.cmd wrangler secret put DEMO_STUDENT_EMAIL
+npx.cmd wrangler secret put DEMO_STUDENT_PASSWORD
+npx.cmd wrangler secret put DEMO_EMPLOYER_EMAIL
+npx.cmd wrangler secret put DEMO_EMPLOYER_PASSWORD
+```
+
+Use unique temporary passwords. `AUTH_SESSION_SECRET` must be a long random value. Do not commit the account emails or passwords; the placeholder values in `.dev.vars.example` are intentionally fictional.
+
 `NOTIFICATION_SERVICE_URL` is configured in `wrangler.jsonc`. The partner endpoint health check should be confirmed with the partner group before a live evaluation.
 
 ## Demonstration flow
 
-1. Select a fictional student profile from **Demo Access**.
+1. Sign in as the configured student demo account.
 2. Browse an approved job and submit an application.
-3. Select a fictional employer profile and update the application status.
+3. Sign out, then sign in as the configured employer demo account and update the application status.
 4. The Worker writes an internal notification, places an event in the outbox, and sends it to the Notification Hub.
 5. The partner callback reaches `POST /api/webhooks/notification`; it is authenticated, validated, deduplicated, and stored in D1.
 6. Return to the matching student profile and open Notifications.
 
-The profile picker is explicitly a demo convenience, not production authentication. Do not enter real personal data.
+The Worker issues a short-lived, `HttpOnly`, `Secure`, `SameSite=Lax` signed session cookie. The API ignores client-supplied student/employer IDs for protected actions and derives identity and role from this session. Do not enter real personal data.
 
 ## Cross-group webhook contract
 

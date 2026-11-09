@@ -71,7 +71,7 @@ export const JobSearchPage: React.FC = () => {
   useEffect(() => {
     if (user?.id && isStudent) {
       applicationService
-        .getMyApplications(user.id)
+        .getMyApplications()
         .then((apps) => {
           setAppliedJobIds(new Set(apps.map((a) => a.job_id)));
         })

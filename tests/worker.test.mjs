@@ -2,11 +2,26 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from '../src/worker.js';
 
+const testSecret = 'test-session-secret-at-least-32-bytes-long';
 const baseEnv = {
   WEBHOOK_SECRET: 'test-webhook-secret',
+  AUTH_SESSION_SECRET: testSecret,
   DB: { prepare() { throw new Error('This request should not access D1'); } },
   ASSETS: { fetch: async () => new Response('asset') },
 };
+
+async function createTestCookie(session, secret = testSecret) {
+  const bytes = new TextEncoder().encode(JSON.stringify({ ...session, exp: Math.floor(Date.now() / 1000) + 3600 }));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  const payload = btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '');
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sigBytes = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)));
+  let sigBinary = '';
+  for (const byte of sigBytes) sigBinary += String.fromCharCode(byte);
+  const signature = btoa(sigBinary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '');
+  return `jobboard_session=${payload}.${signature}`;
+}
 
 async function api(path, init = {}, env = baseEnv) {
   return worker.fetch(new Request(`https://example.test${path}`, init), env);
@@ -27,10 +42,33 @@ test('untrusted browser origins do not receive CORS access', async () => {
   assert.equal(response.headers.get('access-control-allow-origin'), null);
 });
 
+test('job creation requires authenticated employer', async () => {
+  const unauth = await api('/api/jobs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Test' }) });
+  assert.equal(unauth.status, 401);
+  assert.equal((await unauth.json()).error, 'Authentication required');
+});
+
+test('a student session cannot use employer-only job creation', async () => {
+  const cookie = await createTestCookie({ id: 4, role: 'student', email: 'student@example.com', name: 'Test Student' });
+  const response = await api('/api/jobs', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Test' }) });
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error, 'You are not authorized for this action');
+});
+
+test('a valid signed session is available from the server-only session endpoint', async () => {
+  const cookie = await createTestCookie({ id: 4, role: 'student', email: 'student@example.com', name: 'Test Student' });
+  const response = await api('/api/auth/me', { headers: { cookie } });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.data, { id: '4', name: 'Test Student', email: 'student@example.com', role: 'student', studentId: '4' });
+});
+
 test('job creation rejects malformed and incomplete input before database writes', async () => {
-  const malformed = await api('/api/jobs', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: 'not json' });
+  const cookie = await createTestCookie({ id: 1, role: 'employer', email: 'emp@example.com', name: 'Test Employer' });
+  const authHeaders = { cookie };
+  const malformed = await api('/api/jobs', { method: 'POST', headers: { ...authHeaders, 'content-type': 'text/plain' }, body: 'not json' });
   assert.equal(malformed.status, 400);
-  const incomplete = await api('/api/jobs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Only a title' }) });
+  const incomplete = await api('/api/jobs', { method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Only a title' }) });
   assert.equal(incomplete.status, 400);
   assert.equal((await incomplete.json()).error, 'Missing required fields');
 });

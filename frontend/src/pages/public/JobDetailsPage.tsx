@@ -44,7 +44,7 @@ import {
 export const JobDetailsPage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { id } = useParams<{ id: string }>();
-  const { user, isAuthenticated, isStudent } = useAuth();
+  const { user, isAuthenticated, isStudent, refreshSession } = useAuth();
 
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,7 +64,7 @@ export const JobDetailsPage: React.FC = () => {
   useEffect(() => {
     if (id && user?.id && isStudent) {
       applicationService
-        .getMyApplications(user.id)
+        .getMyApplications()
         .then((apps) => {
           const found = apps.some((a) => a.job_id === id);
           setHasApplied(found);
@@ -86,12 +86,13 @@ export const JobDetailsPage: React.FC = () => {
     }
   };
 
-  const handleApplyClick = () => {
-    if (!isAuthenticated) {
+  const handleApplyClick = async () => {
+    const currentUser = await refreshSession();
+    if (!currentUser) {
       setIsGuestLoginModalOpen(true);
       return;
     }
-    if (!isStudent) {
+    if (currentUser.role !== 'student') {
       setEmployerNotice(t('jobDetails.employerCannotApply'));
       return;
     }

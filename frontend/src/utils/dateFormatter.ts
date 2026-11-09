@@ -1,5 +1,16 @@
 import i18n from '../i18n';
 
+export const APP_TIME_ZONE = 'Asia/Bangkok';
+
+// SQLite CURRENT_TIMESTAMP is UTC but is returned without a timezone suffix.
+// Parse that exact format as UTC instead of letting each browser treat it as local time.
+function parseAppDate(dateInput: string | number | Date): Date {
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dateInput)) {
+    return new Date(`${dateInput.replace(' ', 'T')}Z`);
+  }
+  return new Date(dateInput);
+}
+
 /**
  * Format a date string or Date object according to the active language:
  * - 'th': Thai calendar with Buddhist Era (พ.ศ.)
@@ -11,7 +22,7 @@ export const formatDate = (
 ): string => {
   if (!dateInput) return '-';
 
-  const date = new Date(dateInput);
+  const date = parseAppDate(dateInput);
   if (isNaN(date.getTime())) return '-';
 
   const currentLang = i18n.language?.startsWith('en') ? 'en' : 'th';
@@ -21,6 +32,7 @@ export const formatDate = (
     day: 'numeric',
     month: 'short',
     year: 'numeric',
+    timeZone: APP_TIME_ZONE,
     ...options,
   };
 
@@ -37,7 +49,7 @@ export const formatFullDate = (dateInput: string | number | Date | null | undefi
 
 export const formatRelativeTime = (dateInput: string | number | Date | null | undefined): string => {
   if (!dateInput) return '-';
-  const date = new Date(dateInput);
+  const date = parseAppDate(dateInput);
   if (isNaN(date.getTime())) return '-';
 
   const isEn = i18n.language?.startsWith('en');

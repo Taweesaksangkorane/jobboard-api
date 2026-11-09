@@ -5,7 +5,7 @@ Run these checks in a browser against the deployed Worker. Record the date, test
 | ID | Human action | Expected result | Evidence to capture | Result |
 | --- | --- | --- | --- | --- |
 | M-01 | Open `/` | Job Board landing page loads over HTTPS | Browser address bar and page | Pending evaluator run |
-| M-02 | Open Demo Access; select a student; open notifications | The selected fictional profile is shown and notification list loads | Selector and notifications page | Pending evaluator run |
+| M-02 | Open Login; sign in as the configured Student account; open notifications | Worker creates session; Student dashboard and that account's notification list load | Login response/cookie and notifications page | Pending evaluator run |
 | M-03 | Select an employer; update a fictional application's status | Status changes and API response reports the integration event | UI plus network response | Pending evaluator run |
 | M-04 | With the partner group present, confirm the student notification | Partner webhook result is stored and visible for the matching demo profile | Both systems plus request/response | Pending joint run |
 | M-05 | Submit a job form with required fields omitted | Client/API shows validation failure; no job is created | Form error or HTTP 400 response | Pending evaluator run |
