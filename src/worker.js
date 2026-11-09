@@ -8,9 +8,63 @@ const jobFields = [
 ];
 const applicationStatuses = ['submitted', 'reviewing', 'shortlisted', 'interview', 'rejected', 'accepted'];
 const maxJsonBytes = 16 * 1024;
+const sessionDurationSeconds = 4 * 60 * 60;
 
-function reply(body, status = 200) {
-  return Response.json(body, { status, headers: jsonHeaders });
+function reply(body, status = 200, headers = {}) {
+  return Response.json(body, { status, headers: { ...jsonHeaders, ...headers } });
+}
+
+function base64UrlEncode(value) {
+  const bytes = value instanceof Uint8Array ? value : new TextEncoder().encode(value);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '');
+}
+
+function base64UrlDecode(value) {
+  const padded = value.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4 - (value.length % 4)) % 4);
+  return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+}
+
+async function hmac(value, secret) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value)));
+}
+
+async function createSession(session, secret) {
+  const payload = base64UrlEncode(JSON.stringify({ ...session, exp: Math.floor(Date.now() / 1000) + sessionDurationSeconds }));
+  const signature = base64UrlEncode(await hmac(payload, secret));
+  return `${payload}.${signature}`;
+}
+
+async function readSession(request, env) {
+  if (!env.AUTH_SESSION_SECRET) return null;
+  const cookie = request.headers.get('cookie') || '';
+  const token = cookie.split(';').map((item) => item.trim()).find((item) => item.startsWith('jobboard_session='))?.slice('jobboard_session='.length);
+  if (!token || !token.includes('.')) return null;
+  const [payload, signature] = token.split('.');
+  const expected = base64UrlEncode(await hmac(payload, env.AUTH_SESSION_SECRET));
+  if (!secretsMatch(signature, expected)) return null;
+  try {
+    const session = JSON.parse(new TextDecoder().decode(base64UrlDecode(payload)));
+    if (!['student', 'employer'].includes(session.role) || !Number.isInteger(Number(session.id)) || session.exp <= Math.floor(Date.now() / 1000)) return null;
+    return session;
+  } catch { return null; }
+}
+
+function sessionCookie(token) {
+  return `jobboard_session=${token}; Path=/; Max-Age=${sessionDurationSeconds}; HttpOnly; Secure; SameSite=Lax`;
+}
+
+function clearSessionCookie() {
+  return 'jobboard_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax';
+}
+
+async function requireRole(request, env, role) {
+  const session = await readSession(request, env);
+  if (!session) return { error: reply({ success: false, error: 'Authentication required' }, 401) };
+  if (role && session.role !== role) return { error: reply({ success: false, error: 'You are not authorized for this action' }, 403) };
+  return { session };
 }
 
 async function bodyOf(request) {
@@ -37,9 +91,12 @@ function applySecurityHeaders(request, response, env) {
   const headers = new Headers(response.headers);
   const requestOrigin = new URL(request.url).origin;
   const configuredOrigins = (env.ALLOWED_ORIGINS || '').split(',').map((item) => item.trim()).filter(Boolean);
-  const allowedOrigins = new Set([requestOrigin, 'http://localhost:8787', 'http://127.0.0.1:8787', ...configuredOrigins]);
+  const allowedOrigins = new Set([requestOrigin, 'http://localhost:8787', 'http://127.0.0.1:8787', 'http://localhost:5173', 'http://127.0.0.1:5173', ...configuredOrigins]);
   const origin = request.headers.get('origin');
-  if (origin && allowedOrigins.has(origin)) headers.set('access-control-allow-origin', origin);
+  if (origin && allowedOrigins.has(origin)) {
+    headers.set('access-control-allow-origin', origin);
+    headers.set('access-control-allow-credentials', 'true');
+  }
   headers.set('vary', 'Origin');
   headers.set('access-control-allow-headers', 'content-type,x-webhook-secret,x-partner-service');
   headers.set('access-control-allow-methods', 'GET,POST,PATCH,DELETE,OPTIONS');
@@ -85,6 +142,36 @@ async function handleApi(request, env, url) {
 
   if (method === 'OPTIONS') return new Response(null, { status: 204 });
   if (method === 'GET' && path === '/api/health') return reply({ success: true, message: 'Job Board API is running on Cloudflare Workers' });
+
+  if (method === 'POST' && path === '/api/auth/login') {
+    const input = await bodyOf(request);
+    if (!input || typeof input.email !== 'string' || typeof input.password !== 'string') return reply({ success: false, error: 'Email and password are required' }, 400);
+    if (!env.AUTH_SESSION_SECRET || !env.DEMO_STUDENT_EMAIL || !env.DEMO_STUDENT_PASSWORD || !env.DEMO_EMPLOYER_EMAIL || !env.DEMO_EMPLOYER_PASSWORD) {
+      return reply({ success: false, error: 'Demo authentication is not configured' }, 503);
+    }
+    const email = input.email.trim().toLowerCase();
+    const accounts = [
+      { role: 'student', email: env.DEMO_STUDENT_EMAIL.toLowerCase(), password: env.DEMO_STUDENT_PASSWORD, id: 4 },
+      { role: 'employer', email: env.DEMO_EMPLOYER_EMAIL.toLowerCase(), password: env.DEMO_EMPLOYER_PASSWORD, id: 1 },
+    ];
+    const account = accounts.find((candidate) => secretsMatch(email, candidate.email) && secretsMatch(input.password, candidate.password));
+    if (!account) return reply({ success: false, error: 'Invalid email or password' }, 401);
+    const profile = account.role === 'student'
+      ? await env.DB.prepare('SELECT student_id AS id, name FROM students WHERE student_id = ?').bind(account.id).first()
+      : await env.DB.prepare('SELECT employer_id AS id, company_name AS name FROM employers WHERE employer_id = ? AND approval_status = ?').bind(account.id, 'approved').first();
+    if (!profile) return reply({ success: false, error: 'Demo account is unavailable' }, 403);
+    const token = await createSession({ id: Number(profile.id), role: account.role, email: account.email, name: profile.name }, env.AUTH_SESSION_SECRET);
+    return reply({ success: true, data: { id: String(profile.id), name: profile.name, email: account.email, role: account.role, studentId: account.role === 'student' ? String(profile.id) : undefined, companyName: account.role === 'employer' ? profile.name : undefined } }, 200, { 'set-cookie': sessionCookie(token) });
+  }
+
+  if (method === 'POST' && path === '/api/auth/logout') return reply({ success: true, data: null }, 200, { 'set-cookie': clearSessionCookie() });
+
+  if (method === 'GET' && path === '/api/auth/me') {
+    const auth = await requireRole(request, env);
+    if (auth.error) return auth.error;
+    const { session } = auth;
+    return reply({ success: true, data: { id: String(session.id), name: session.name, email: session.email, role: session.role, studentId: session.role === 'student' ? String(session.id) : undefined, companyName: session.role === 'employer' ? session.name : undefined } });
+  }
 
   if (method === 'GET' && path === '/api/students') {
     const { results } = await env.DB.prepare('SELECT student_id, name FROM students ORDER BY student_id').all();
@@ -133,16 +220,18 @@ async function handleApi(request, env, url) {
   }
 
   if (method === 'POST' && path === '/api/jobs') {
+    const auth = await requireRole(request, env, 'employer');
+    if (auth.error) return auth.error;
     const input = await bodyOf(request);
     if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
-    for (const key of ['employer_id', 'title', 'description', 'category', 'location', 'province']) {
+    for (const key of ['title', 'description', 'category', 'location', 'province']) {
       if (!input[key]) return reply({ success: false, error: 'Missing required fields' }, 400);
     }
-    const employer = await env.DB.prepare('SELECT * FROM employers WHERE employer_id = ?').bind(input.employer_id).first();
+    const employer = await env.DB.prepare('SELECT * FROM employers WHERE employer_id = ?').bind(auth.session.id).first();
     if (!employer) return reply({ success: false, error: 'Employer not found' }, 404);
     if (employer.approval_status !== 'approved') return reply({ success: false, error: 'Employer is not approved' }, 403);
     const fields = ['employer_id', ...jobFields.filter((key) => input[key] !== undefined)];
-    const values = fields.map((key) => key === 'status' ? (input[key] || 'open') : input[key]);
+    const values = fields.map((key) => key === 'employer_id' ? auth.session.id : key === 'status' ? (input[key] || 'open') : input[key]);
     if (!fields.includes('status')) { fields.push('status'); values.push('open'); }
     const result = await env.DB.prepare(`INSERT INTO jobs (${fields.join(',')}) VALUES (${fields.map(() => '?').join(',')})`).bind(...values).run();
     const data = await env.DB.prepare('SELECT * FROM jobs WHERE job_id = ?').bind(result.meta.last_row_id).first();
@@ -155,6 +244,9 @@ async function handleApi(request, env, url) {
     if (!existing) return reply({ success: false, error: 'Job not found' }, 404);
     if (method === 'GET') return reply({ success: true, data: existing });
     if (method === 'DELETE') {
+      const auth = await requireRole(request, env, 'employer');
+      if (auth.error) return auth.error;
+      if (Number(existing.employer_id) !== Number(auth.session.id)) return reply({ success: false, error: 'You are not authorized to delete this job' }, 403);
       await env.DB.batch([
         env.DB.prepare('DELETE FROM notifications WHERE related_application_id IN (SELECT application_id FROM applications WHERE job_id = ?)').bind(jobId),
         env.DB.prepare("DELETE FROM integration_outbox WHERE COALESCE(json_extract(payload, '$.metadata.job_id'), json_extract(payload, '$.data.job_id')) = ?").bind(Number(jobId)),
@@ -163,9 +255,11 @@ async function handleApi(request, env, url) {
       return reply({ success: true, message: 'Job deleted successfully', job_id: Number(jobId) });
     }
     if (method === 'PATCH') {
+      const auth = await requireRole(request, env, 'employer');
+      if (auth.error) return auth.error;
       const input = await bodyOf(request);
       if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
-      if (String(existing.employer_id) !== String(input.employer_id)) return reply({ success: false, error: 'You are not authorized to update this job' }, 403);
+      if (Number(existing.employer_id) !== Number(auth.session.id)) return reply({ success: false, error: 'You are not authorized to update this job' }, 403);
       const fields = jobFields.filter((key) => input[key] !== undefined);
       if (!fields.length) return reply({ success: false, error: 'No fields to update' }, 400);
       await env.DB.prepare(`UPDATE jobs SET ${fields.map((key) => `${key} = ?`).join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?`).bind(...fields.map((key) => input[key]), jobId).run();
@@ -175,42 +269,49 @@ async function handleApi(request, env, url) {
   }
 
   if (method === 'POST' && (match = path.match(/^\/api\/jobs\/(\d+)\/applications$/))) {
+    const auth = await requireRole(request, env, 'student');
+    if (auth.error) return auth.error;
     const jobId = match[1];
     const input = await bodyOf(request);
     if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
-    if (!input.student_id) return reply({ success: false, error: 'student_id is required' }, 400);
-    const student = await env.DB.prepare('SELECT * FROM students WHERE student_id = ?').bind(input.student_id).first();
+    const student = await env.DB.prepare('SELECT * FROM students WHERE student_id = ?').bind(auth.session.id).first();
     if (!student) return reply({ success: false, error: 'Student not found' }, 404);
     const job = await env.DB.prepare('SELECT * FROM jobs WHERE job_id = ?').bind(jobId).first();
     if (!job) return reply({ success: false, error: 'Job not found' }, 404);
     if (job.status !== 'open') return reply({ success: false, error: 'Job is not open for applications' }, 400);
-    const duplicate = await env.DB.prepare('SELECT application_id FROM applications WHERE student_id = ? AND job_id = ?').bind(input.student_id, jobId).first();
+    const duplicate = await env.DB.prepare('SELECT application_id FROM applications WHERE student_id = ? AND job_id = ?').bind(auth.session.id, jobId).first();
     if (duplicate) return reply({ success: false, error: 'Student has already applied for this job' }, 409);
     const result = await env.DB.prepare('INSERT INTO applications (student_id, job_id, student_name, student_email, student_phone, notes, resume_url, portfolio_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(input.student_id, jobId, input.student_name || null, input.student_email || null, input.student_phone || null, input.notes || null, input.resume_url || null, input.portfolio_url || null).run();
+      .bind(auth.session.id, jobId, input.student_name || null, input.student_email || null, input.student_phone || null, input.notes || null, input.resume_url || null, input.portfolio_url || null).run();
     const data = await env.DB.prepare('SELECT * FROM applications WHERE application_id = ?').bind(result.meta.last_row_id).first();
     return reply({ success: true, message: 'Application submitted successfully', data }, 201);
   }
 
   if (method === 'GET' && path === '/api/applications/me') {
-    const studentId = url.searchParams.get('student_id');
-    if (!studentId) return reply({ success: false, error: 'student_id is required' }, 400);
-    const { results } = await env.DB.prepare(`SELECT a.*, j.title AS job_title, j.category, j.province, j.location, j.work_type, j.salary_range, e.company_name FROM applications a JOIN jobs j ON j.job_id = a.job_id JOIN employers e ON e.employer_id = j.employer_id WHERE a.student_id = ? ORDER BY a.applied_at DESC`).bind(studentId).all();
+    const auth = await requireRole(request, env, 'student');
+    if (auth.error) return auth.error;
+    const { results } = await env.DB.prepare(`SELECT a.*, j.title AS job_title, j.category, j.province, j.location, j.work_type, j.salary_range, e.company_name FROM applications a JOIN jobs j ON j.job_id = a.job_id JOIN employers e ON e.employer_id = j.employer_id WHERE a.student_id = ? ORDER BY a.applied_at DESC`).bind(auth.session.id).all();
     return reply({ success: true, count: results.length, data: results });
   }
 
   if (method === 'GET' && (match = path.match(/^\/api\/employers\/(\d+)\/applications$/))) {
+    const auth = await requireRole(request, env, 'employer');
+    if (auth.error) return auth.error;
+    if (Number(match[1]) !== Number(auth.session.id)) return reply({ success: false, error: 'You are not authorized to view these applications' }, 403);
     const { results } = await env.DB.prepare(`SELECT a.*, j.title AS job_title, j.category, j.province, j.location, s.name AS student_name, s.email AS student_email FROM applications a JOIN jobs j ON j.job_id = a.job_id JOIN students s ON s.student_id = a.student_id WHERE j.employer_id = ? ORDER BY a.applied_at DESC`).bind(match[1]).all();
     return reply({ success: true, count: results.length, data: results });
   }
 
   if (method === 'PATCH' && (match = path.match(/^\/api\/applications\/(\d+)\/status$/))) {
+    const auth = await requireRole(request, env, 'employer');
+    if (auth.error) return auth.error;
     const id = match[1];
     const input = await bodyOf(request);
     if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
     if (!applicationStatuses.includes(input.status)) return reply({ success: false, error: 'Invalid application status' }, 400);
-    const application = await env.DB.prepare('SELECT * FROM applications WHERE application_id = ?').bind(id).first();
+    const application = await env.DB.prepare('SELECT a.*, j.employer_id FROM applications a JOIN jobs j ON j.job_id = a.job_id WHERE a.application_id = ?').bind(id).first();
     if (!application) return reply({ success: false, error: 'Application not found' }, 404);
+    if (Number(application.employer_id) !== Number(auth.session.id)) return reply({ success: false, error: 'You are not authorized to update this application' }, 403);
     await env.DB.prepare('UPDATE applications SET status = ?, employer_feedback = COALESCE(?, employer_feedback), updated_at = CURRENT_TIMESTAMP WHERE application_id = ?').bind(input.status, input.employer_feedback || null, id).run();
     const data = await env.DB.prepare('SELECT * FROM applications WHERE application_id = ?').bind(id).first();
     const eventId = `app-status-${id}-${input.status}-${Date.now()}`;
@@ -236,37 +337,46 @@ async function handleApi(request, env, url) {
   }
 
   if (method === 'GET' && (match = path.match(/^\/api\/integration\/applications\/(\d+)$/))) {
-    const data = await env.DB.prepare('SELECT application_id, student_id, job_id, status, applied_at, updated_at FROM applications WHERE application_id = ?').bind(match[1]).first();
+    const auth = await requireRole(request, env);
+    const partnerRequest = env.WEBHOOK_SECRET && secretsMatch(request.headers.get('x-webhook-secret'), env.WEBHOOK_SECRET);
+    if (auth.error && !partnerRequest) return auth.error;
+    const data = await env.DB.prepare(`
+      SELECT a.*, j.title AS job_title, j.employer_id,
+             COALESCE(a.student_name, s.name) AS student_name,
+             COALESCE(a.student_email, s.email) AS student_email
+      FROM applications a
+      JOIN jobs j ON j.job_id = a.job_id
+      LEFT JOIN students s ON s.student_id = a.student_id
+      WHERE a.application_id = ?
+    `).bind(match[1]).first();
     if (!data) return reply({ success: false, error: 'Application not found', requested_at: new Date().toISOString() }, 404);
+    if (!partnerRequest && auth.session.role === 'employer' && Number(data.employer_id) !== Number(auth.session.id)) return reply({ success: false, error: 'You are not authorized to view this application' }, 403);
+    if (!partnerRequest && auth.session.role === 'student' && Number(data.student_id) !== Number(auth.session.id)) return reply({ success: false, error: 'You are not authorized to view this application' }, 403);
     return reply({ success: true, requested_at: new Date().toISOString(), data });
   }
 
   if (method === 'GET' && path === '/api/notifications') {
-    const recipientId = url.searchParams.get('recipient_id');
-    if (!recipientId) return reply({ success: false, error: 'recipient_id is required' }, 400);
-    const { results } = await env.DB.prepare('SELECT notification_id AS id, recipient_id, title, message, type, related_application_id, read, created_at FROM notifications WHERE recipient_id = ? ORDER BY created_at DESC').bind(recipientId).all();
+    const auth = await requireRole(request, env, 'student');
+    if (auth.error) return auth.error;
+    const { results } = await env.DB.prepare('SELECT notification_id AS id, recipient_id, title, message, type, related_application_id, read, created_at FROM notifications WHERE recipient_id = ? ORDER BY created_at DESC').bind(auth.session.id).all();
     return reply({ success: true, count: results.length, data: results.map((row) => ({ ...row, id: String(row.id), read: Boolean(row.read) })) });
   }
 
   if (method === 'PATCH' && path === '/api/notifications/read-all') {
+    const auth = await requireRole(request, env, 'student');
+    if (auth.error) return auth.error;
     const input = await bodyOf(request);
     if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
-    const recipientId = Number(input.recipient_id);
-    if (!Number.isInteger(recipientId) || recipientId <= 0) {
-      return reply({ success: false, error: 'A positive integer recipient_id is required' }, 400);
-    }
-    const result = await env.DB.prepare('UPDATE notifications SET read = 1 WHERE recipient_id = ? AND read = 0').bind(recipientId).run();
+    const result = await env.DB.prepare('UPDATE notifications SET read = 1 WHERE recipient_id = ? AND read = 0').bind(auth.session.id).run();
     return reply({ success: true, data: { updated: result.meta.changes || 0 } });
   }
 
   if (method === 'PATCH' && (match = path.match(/^\/api\/notifications\/(\d+)\/read$/))) {
+    const auth = await requireRole(request, env, 'student');
+    if (auth.error) return auth.error;
     const input = await bodyOf(request);
     if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
-    const recipientId = Number(input.recipient_id);
-    if (!Number.isInteger(recipientId) || recipientId <= 0) {
-      return reply({ success: false, error: 'A positive integer recipient_id is required' }, 400);
-    }
-    const notification = await env.DB.prepare('SELECT notification_id FROM notifications WHERE notification_id = ? AND recipient_id = ?').bind(match[1], recipientId).first();
+    const notification = await env.DB.prepare('SELECT notification_id FROM notifications WHERE notification_id = ? AND recipient_id = ?').bind(match[1], auth.session.id).first();
     if (!notification) return reply({ success: false, error: 'Notification not found' }, 404);
     await env.DB.prepare('UPDATE notifications SET read = 1 WHERE notification_id = ?').bind(match[1]).run();
     return reply({ success: true, data: { id: String(match[1]), read: true } });
@@ -300,11 +410,15 @@ async function handleApi(request, env, url) {
   }
 
   if (method === 'POST' && path === '/api/integration/notifications') {
+    const auth = await requireRole(request, env, 'employer');
+    if (auth.error) return auth.error;
     const input = await bodyOf(request);
     if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
     if (!input.application_id) return reply({ success: false, error: 'application_id is required' }, 400);
     const application = await env.DB.prepare('SELECT * FROM applications WHERE application_id = ?').bind(input.application_id).first();
     if (!application) return reply({ success: false, error: 'Application not found' }, 404);
+    const job = await env.DB.prepare('SELECT employer_id FROM jobs WHERE job_id = ?').bind(application.job_id).first();
+    if (!job || Number(job.employer_id) !== Number(auth.session.id)) return reply({ success: false, error: 'You are not authorized to send this notification' }, 403);
     const notification = { student_id: application.student_id, application_id: application.application_id, type: 'APPLICATION_STATUS_CHANGED', message: input.message || `Your application status is ${application.status}` };
     const target = env.NOTIFICATION_SERVICE_URL ? `${env.NOTIFICATION_SERVICE_URL.replace(/\/$/, '')}/api/notifications` : null;
     const result = await sendWebhook(env, target, notification);
