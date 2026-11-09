@@ -364,6 +364,55 @@ export const JobSearchPage: React.FC = () => {
     </div>
   );
 
+  const desktopFilterBar = (
+    <div className="hidden lg:block rounded-2xl border border-[#E9EAF1] bg-white p-5 shadow-2xs">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-[#6C4CE3]" />
+          <h2 className="text-sm font-bold text-[#25243A]">{t('jobSearch.filterTitle')}</h2>
+        </div>
+        {activeFilterCount > 0 && (
+          <button type="button" onClick={handleClearFilters} className="text-xs font-medium text-[#6C4CE3] hover:underline">
+            {t('actions.clearFilters')} ({activeFilterCount})
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-5 gap-3">
+        <label className="block text-xs font-medium text-[#25243A]">
+          {t('jobSearch.provinceFilter')}
+          <div className="mt-1.5"><ProvinceSelect value={selectedProvince} onChange={setSelectedProvince} variant="filter" showAllOption /></div>
+        </label>
+        <label className="block text-xs font-medium text-[#25243A]">
+          {t('jobSearch.categoryFilter')}
+          <select value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)} className="mt-1.5 w-full rounded-xl border border-[#E9EAF1] bg-white px-3 py-2 text-xs text-[#25243A] outline-none focus:border-[#6C4CE3]">
+            <option value="all">{t('categories.all')}</option>
+            {categories.map((category) => <option key={category.key} value={category.key}>{t(category.titleKey)}</option>)}
+          </select>
+        </label>
+        <label className="block text-xs font-medium text-[#25243A]">
+          {t('jobSearch.workTypeFilter')}
+          <select value={selectedWorkType} onChange={(event) => setSelectedWorkType(event.target.value)} className="mt-1.5 w-full rounded-xl border border-[#E9EAF1] bg-white px-3 py-2 text-xs text-[#25243A] outline-none focus:border-[#6C4CE3]">
+            <option value="all">{t('workType.all')}</option>
+            {workTypes.map((type) => <option key={type} value={type}>{t(getWorkTypeTranslationKey(type))}</option>)}
+          </select>
+        </label>
+        <label className="block text-xs font-medium text-[#25243A]">
+          {t('jobSearch.languageFilter')}
+          <select value={selectedLang} onChange={(event) => setSelectedLang(event.target.value)} className="mt-1.5 w-full rounded-xl border border-[#E9EAF1] bg-white px-3 py-2 text-xs text-[#25243A] outline-none focus:border-[#6C4CE3]">
+            <option value="all">{t('jobLanguage.allLanguages')}</option>
+            <option value="both">{t('jobLanguage.bilingual')}</option>
+            <option value="th">{t('jobLanguage.thaiOnly')}</option>
+            <option value="en">{t('jobLanguage.englishOnly')}</option>
+          </select>
+        </label>
+        <div className="flex items-end gap-2">
+          <Tooltip content={t('common:tooltips.filter')}><Button variant="primary" size="md" onClick={() => handleApplyFilter()} className="flex-1">{t('actions.filter')}</Button></Tooltip>
+          <Tooltip content={t('common:tooltips.clearFilters')}><Button type="button" variant="outline" size="md" onClick={handleClearFilters} aria-label={t('actions.clearFilters')}><RotateCcw className="h-4 w-4" /></Button></Tooltip>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
       {/* Top Header */}
@@ -375,7 +424,7 @@ export const JobSearchPage: React.FC = () => {
       </div>
 
       {/* Main Search Bar */}
-      <div className="mb-8 rounded-2xl border border-[#E9EAF1] bg-white p-3 shadow-xs">
+      <div className="mb-4 rounded-2xl border border-[#E9EAF1] bg-white p-3 shadow-xs">
         <form onSubmit={handleApplyFilter} className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#A0A2B3]" />
@@ -415,33 +464,9 @@ export const JobSearchPage: React.FC = () => {
         </form>
       </div>
 
-      {/* Layout Grid: Filters Left + Jobs Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Desktop Sidebar Filters */}
-        <div className="hidden lg:block lg:col-span-1">
-          <div className="sticky top-24 rounded-2xl border border-[#E9EAF1] bg-white p-5 shadow-2xs">
-            <div className="flex items-center justify-between border-b border-[#E9EAF1] pb-3 mb-4">
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-[#6C4CE3]" />
-                <h3 className="text-sm font-bold text-[#25243A]">{t('jobSearch.filterTitle')}</h3>
-              </div>
-              {activeFilterCount > 0 && (
-                <Tooltip content={t('common:tooltips.clearFilters')}>
-                  <button
-                    type="button"
-                    onClick={handleClearFilters}
-                    className="text-[11px] text-[#6C4CE3] hover:underline cursor-pointer"
-                  >
-                    {t('actions.clearFilters')}
-                  </button>
-                </Tooltip>
-              )}
-            </div>
-            {filterContent}
-          </div>
-        </div>
+      <div className="mb-8">{desktopFilterBar}</div>
 
-        {/* Mobile Filter Drawer / Modal */}
+      {/* Mobile Filter Drawer / Modal */}
         {mobileFilterOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 lg:hidden">
             <div
@@ -470,8 +495,8 @@ export const JobSearchPage: React.FC = () => {
           </div>
         )}
 
-        {/* Jobs Listing Right */}
-        <div className="lg:col-span-3">
+      {/* Jobs Listing */}
+      <div>
           {/* Results count & Sort */}
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <p className="text-xs text-[#73758A]">
@@ -529,7 +554,6 @@ export const JobSearchPage: React.FC = () => {
               />
             </div>
           )}
-        </div>
       </div>
     </div>
   );
