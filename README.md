@@ -68,6 +68,19 @@ Use unique temporary passwords. `AUTH_SESSION_SECRET` must be a long random valu
 5. The partner callback reaches `POST /api/webhooks/notification`; it is authenticated, validated, deduplicated, and stored in D1.
 6. Return to the matching student profile and open Notifications.
 
+## Final presentation plan (5–10 minutes)
+
+1. Open the production URL and show the Job Board home page and job search.
+2. Sign in with the fictional Student demo account, open a job, and submit an application with a valid 10-digit Thai phone number.
+3. Sign out and sign in with the fictional Employer demo account. Open the applicant list and change the application status.
+4. Show the status-update API response with `notification_sent` and explain that the event is sent to the partner Notification Hub.
+5. Show the Student notification created after the partner callback reaches `/api/webhooks/notification`.
+6. Use Postman to show the wrong-secret `401` case and the duplicate-event response. Do not display passwords or webhook secrets.
+
+Production presentation URL: `https://team18-job-board-api.tawee-dev.workers.dev`
+
+The Happy Path is Student login -> job search -> application submission -> Employer status update -> partner webhook -> Student notification. The browser UI demonstrates the user journey; Postman provides request/response evidence for the API and webhook integration.
+
 The Worker issues a short-lived, `HttpOnly`, `Secure`, `SameSite=Lax` signed session cookie. The API ignores client-supplied student/employer IDs for protected actions and derives identity and role from this session. Do not enter real personal data.
 
 ## Cross-group webhook contract
