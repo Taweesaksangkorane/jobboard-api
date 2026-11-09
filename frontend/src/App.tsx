@@ -4,6 +4,7 @@ import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { PublicLayout } from './layouts/PublicLayout';
 import { StudentLayout } from './layouts/StudentLayout';
 import { EmployerLayout } from './layouts/EmployerLayout';
+import { useAuth } from './contexts/AuthContext';
 
 // Public pages
 import { HomePage } from './pages/public/HomePage';
@@ -49,6 +50,13 @@ const NotFoundPage = () => (
   </div>
 );
 
+const DashboardRedirect = ({ showLogin }: { showLogin: boolean }) => {
+  const { isLoadingAuth, user } = useAuth();
+  if (isLoadingAuth) return <div className="min-h-screen bg-[#F8F9FC]" />;
+  if (!user) return showLogin ? <DemoAccessPage /> : <Navigate to="/login" replace />;
+  return <Navigate to={user.role === 'student' ? '/student/dashboard' : '/employer/dashboard'} replace />;
+};
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -56,11 +64,11 @@ export default function App() {
           <Routes>
             {/* Public Routes */}
             <Route element={<PublicLayout />}>
-              <Route path="/" element={<Navigate to="/login" replace />} />
+              <Route path="/" element={<DashboardRedirect showLogin={false} />} />
               <Route path="/jobs" element={<JobSearchPage />} />
               <Route path="/jobs/:id" element={<JobDetailsPage />} />
-              <Route path="/login" element={<DemoAccessPage />} />
-              <Route path="/register" element={<DemoAccessPage />} />
+              <Route path="/login" element={<DashboardRedirect showLogin />} />
+              <Route path="/register" element={<DashboardRedirect showLogin />} />
             </Route>
 
             {/* Student Protected Routes */}
