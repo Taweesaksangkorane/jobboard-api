@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { Tooltip } from '../../components/common/Tooltip';
+import { isValidThaiPhone, thaiPhoneHelp } from '../../utils/phoneValidation';
 import {
   Mail,
   Phone,
@@ -28,9 +29,15 @@ export const StudentProfilePage: React.FC = () => {
   const [bio, setBio] = useState(user?.bio || '');
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [phoneError, setPhoneError] = useState('');
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    if (phone.trim() && !isValidThaiPhone(phone)) {
+      setPhoneError('Please enter a Thai contact phone number with exactly 10 digits, starting with 0.');
+      return;
+    }
+    setPhoneError('');
     updateProfile({
       name,
       studentId,
@@ -186,8 +193,17 @@ export const StudentProfilePage: React.FC = () => {
               />
               <Input
                 label={t('student:profile.phone')}
+                type="tel"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                inputMode="numeric"
+                maxLength={12}
+                pattern="0[0-9 -]{9,11}"
+                helperText={thaiPhoneHelp}
+                error={phoneError}
+                onChange={(e) => {
+                  setPhone(e.target.value);
+                  if (phoneError) setPhoneError('');
+                }}
               />
               <Input
                 label={t('student:profile.university')}

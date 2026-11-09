@@ -6,6 +6,7 @@ import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { ConfirmDialog } from '../../components/common/Modal';
 import { Tooltip } from '../../components/common/Tooltip';
+import { isValidThaiPhone, thaiPhoneHelp } from '../../utils/phoneValidation';
 import {
   Mail,
   Phone,
@@ -117,6 +118,10 @@ export const CompanyProfilePage: React.FC = () => {
 
     if (!contactPerson.trim()) {
       nextErrors.contactPerson = t('employer:profile.validation.contactPersonReq');
+    }
+
+    if (phone.trim() && !isValidThaiPhone(phone)) {
+      nextErrors.phone = 'Please enter a Thai contact phone number with exactly 10 digits, starting with 0.';
     }
 
     if (website.trim()) {
@@ -416,9 +421,18 @@ export const CompanyProfilePage: React.FC = () => {
               />
               <Input
                 label={t('employer:profile.phone')}
+                type="tel"
                 disabled={isSaving}
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                inputMode="numeric"
+                maxLength={12}
+                pattern="0[0-9 -]{9,11}"
+                helperText={thaiPhoneHelp}
+                error={fieldErrors.phone}
+                onChange={(e) => {
+                  setPhone(e.target.value);
+                  if (fieldErrors.phone) setFieldErrors((prev) => ({ ...prev, phone: undefined }));
+                }}
               />
               <Input
                 label={t('employer:profile.website')}
