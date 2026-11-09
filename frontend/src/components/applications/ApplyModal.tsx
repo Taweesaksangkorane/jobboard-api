@@ -27,7 +27,7 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({ job, isOpen, onClose, on
 
   const [studentName, setStudentName] = useState(user?.name || '');
   const [studentEmail, setStudentEmail] = useState(user?.email || '');
-  const [studentPhone, setStudentPhone] = useState(user?.phone || '');
+  const [studentPhone, setStudentPhone] = useState(user?.phone?.replace(/\D/g, '').slice(0, 10) || '');
   const [notes, setNotes] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [agreeConsent, setAgreeConsent] = useState(true);
@@ -45,7 +45,7 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({ job, isOpen, onClose, on
       setErrorMessage(t('applyModal.consentRequired'));
       return;
     }
-    if (!/^0\d{9}$/.test(studentPhone.replace(/[\s-]/g, ''))) {
+    if (!/^0\d{9}$/.test(studentPhone)) {
       setErrorMessage('Please enter a Thai contact phone number with exactly 10 digits, starting with 0.');
       return;
     }
@@ -135,12 +135,12 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({ job, isOpen, onClose, on
               type="tel"
               required
               value={studentPhone}
-              onChange={(e) => setStudentPhone(e.target.value)}
+              onChange={(e) => setStudentPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
               inputMode="numeric"
-              maxLength={12}
-              pattern="0[0-9 -]{9,11}"
-              helperText="10 digits, for example 085-456-5589"
-              placeholder="08X-XXX-XXXX"
+              maxLength={10}
+              pattern="0[0-9]{9}"
+              helperText="10 digits, for example 0854565589"
+              placeholder="08XXXXXXXX"
             />
           </div>
 
