@@ -25,3 +25,16 @@ The demo login is verified by the Worker against Cloudflare Secrets. The Worker 
 3. Show the warning on Demo Access and this document.
 4. Show that cross-group data is limited to the notification event fields required by the webhook contract and protected by the shared secret.
 5. If a real-person test is ever requested, stop and obtain an approved privacy notice, consent record, access controls, retention period, and deletion process first.
+
+## Final evaluation evidence map
+
+| Requirement | Implemented evidence | Demonstration location |
+| --- | --- | --- |
+| Cloud deployment | Cloudflare Worker and D1 configuration | `https://team18-job-board-api.tawee-dev.workers.dev` and [README.md](../README.md) |
+| Access control | Signed Student/Employer session cookies and role checks | `src/worker.js`, login and protected API flow |
+| Webhook protection | Shared secret validation, constant-time comparison, payload validation, and event deduplication | `src/worker.js`, Postman webhook requests |
+| Injection and input protection | D1 prepared statements, bound values, JSON size/content validation, and phone/status validation | `src/worker.js`, `tests/worker.test.mjs` |
+| Browser protections | CSP, `nosniff`, referrer-policy, permissions-policy, and restricted CORS | `/api/health` response headers and `tests/worker.test.mjs` |
+| Data minimization | Fictional demo profiles and limited notification event fields | Demo Access page and this document |
+
+The deployed URL is a controlled academic demonstration. It must not be used with real applicant data. Production identity verification, password reset, consent/version records, retention/deletion workflows, audit logging, and rate limiting remain out of scope as stated above.
