@@ -1,8 +1,0 @@
-{
-  "name": "Remix JobBoard - แพลตฟอร์มหางานและฝึกงานสำหรับนักศึกษา",
-  "description": "แพลตฟอร์มหางานและฝึกงานสำหรับนิสิต นักศึกษาจบใหม่ และนายจ้าง เชื่อมต่อโอกาสทางอาชีพพร้อมระบบจัดการใบสมัครครบวงจร",
-  "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}

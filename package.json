@@ -2,13 +2,12 @@
   "name": "job-board-api",
   "version": "1.0.0",
   "description": "",
-  "main": "server.js",
+  "type": "module",
   "scripts": {
     "start": "npm run cf:dev",
     "dev": "wrangler dev",
-    "test": "npm run frontend:lint && npm run frontend:build && wrangler deploy --dry-run",
-    "legacy:start": "node server.js",
-    "legacy:test": "jest --runInBand",
+    "test": "npm run test:worker && npm run frontend:lint && npm run frontend:build && wrangler deploy --dry-run",
+    "test:worker": "node --test tests/worker.test.mjs",
     "frontend:dev": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build",
     "frontend:lint": "npm --prefix frontend run lint",
@@ -20,17 +19,8 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "@supabase/supabase-js": "^2.112.4",
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "jest": "^30.5.0",
-    "nodemon": "^3.1.14",
-    "supertest": "^7.2.2",
     "wrangler": "^4.156.2"
   }
 }

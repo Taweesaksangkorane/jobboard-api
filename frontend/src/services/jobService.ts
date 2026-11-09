@@ -21,24 +21,11 @@ function normalizeJob(job: BackendJob): Job {
 export const jobService = {
   async getJobs(filters: Record<string, string> = {}): Promise<Job[]> {
     const supported = new URLSearchParams();
-    for (const key of ['province', 'category', 'status']) {
+    for (const key of ['q', 'province', 'category', 'status', 'work_type', 'lang', 'sort']) {
       if (filters[key]) supported.set(key, filters[key]);
     }
     const suffix = supported.size ? `?${supported.toString()}` : '';
-    let jobs = (await apiRequest<BackendJob[]>(`/api/jobs${suffix}`)).map(normalizeJob);
-
-    const q = filters.q?.toLocaleLowerCase();
-    if (q) {
-      jobs = jobs.filter((job) =>
-        [job.title, job.description, job.location, job.province, job.category]
-          .some((value) => String(value || '').toLocaleLowerCase().includes(q))
-      );
-    }
-    if (filters.work_type) jobs = jobs.filter((job) => job.work_type === filters.work_type);
-    if (filters.lang) jobs = jobs.filter((job) => job.content_language === filters.lang);
-    if (filters.sort === 'salary_asc') jobs.sort((a, b) => (a.salary_range || '').localeCompare(b.salary_range || ''));
-    if (filters.sort === 'salary_desc') jobs.sort((a, b) => (b.salary_range || '').localeCompare(a.salary_range || ''));
-    return jobs;
+    return (await apiRequest<BackendJob[]>(`/api/jobs${suffix}`)).map(normalizeJob);
   },
 
   async getJobById(id: string): Promise<Job> {

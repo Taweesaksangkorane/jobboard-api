@@ -43,6 +43,9 @@ export function DemoAccessPage() {
         <p className="mt-2 text-sm text-[#73758A]">
           เลือกบัญชีตัวอย่างก่อนเข้าสู่ระบบ ข้อมูลที่แก้ไขในหน้านี้มีไว้สำหรับสาธิตเท่านั้น
         </p>
+        <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">
+          Demo environment only: every profile and job record is fictional. Do not enter real personal data, passwords, CVs, or contact details.
+        </p>
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border border-[#DDD7FA] p-6 text-left">
             <GraduationCap className="mb-4 h-8 w-8 text-[#6C4CE3]" />

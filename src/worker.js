@@ -7,13 +7,47 @@ const jobFields = [
   'work_type', 'salary_range', 'application_deadline',
 ];
 const applicationStatuses = ['submitted', 'reviewing', 'shortlisted', 'interview', 'rejected', 'accepted'];
+const maxJsonBytes = 16 * 1024;
 
 function reply(body, status = 200) {
   return Response.json(body, { status, headers: jsonHeaders });
 }
 
 async function bodyOf(request) {
-  try { return await request.json(); } catch { return {}; }
+  const contentType = request.headers.get('content-type') || '';
+  if (contentType && !contentType.toLowerCase().includes('application/json')) return null;
+  try {
+    const raw = await request.text();
+    if (raw.length > maxJsonBytes) return null;
+    return raw ? JSON.parse(raw) : {};
+  } catch { return null; }
+}
+
+function secretsMatch(provided, expected) {
+  if (typeof provided !== 'string' || typeof expected !== 'string') return false;
+  const actual = new TextEncoder().encode(provided);
+  const wanted = new TextEncoder().encode(expected);
+  let difference = actual.length ^ wanted.length;
+  const length = Math.max(actual.length, wanted.length);
+  for (let index = 0; index < length; index += 1) difference |= (actual[index] || 0) ^ (wanted[index] || 0);
+  return difference === 0;
+}
+
+function applySecurityHeaders(request, response, env) {
+  const headers = new Headers(response.headers);
+  const requestOrigin = new URL(request.url).origin;
+  const configuredOrigins = (env.ALLOWED_ORIGINS || '').split(',').map((item) => item.trim()).filter(Boolean);
+  const allowedOrigins = new Set([requestOrigin, 'http://localhost:8787', 'http://127.0.0.1:8787', ...configuredOrigins]);
+  const origin = request.headers.get('origin');
+  if (origin && allowedOrigins.has(origin)) headers.set('access-control-allow-origin', origin);
+  headers.set('vary', 'Origin');
+  headers.set('access-control-allow-headers', 'content-type,x-webhook-secret,x-partner-service');
+  headers.set('access-control-allow-methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+  headers.set('x-content-type-options', 'nosniff');
+  headers.set('referrer-policy', 'strict-origin-when-cross-origin');
+  headers.set('permissions-policy', 'camera=(), microphone=(), geolocation=()');
+  headers.set('content-security-policy', "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'");
+  return new Response(response.body, { status: response.status, headers });
 }
 
 function failure(error, status = 500) {
@@ -53,7 +87,7 @@ async function handleApi(request, env, url) {
   if (method === 'GET' && path === '/api/health') return reply({ success: true, message: 'Job Board API is running on Cloudflare Workers' });
 
   if (method === 'GET' && path === '/api/students') {
-    const { results } = await env.DB.prepare('SELECT student_id, name, email FROM students ORDER BY student_id').all();
+    const { results } = await env.DB.prepare('SELECT student_id, name FROM students ORDER BY student_id').all();
     return reply({ success: true, count: results.length, data: results });
   }
 
@@ -70,16 +104,37 @@ async function handleApi(request, env, url) {
   if (method === 'GET' && path === '/api/jobs') {
     const clauses = ["e.approval_status = 'approved'"];
     const values = [];
-    for (const key of ['province', 'category', 'status']) {
+    for (const key of ['province', 'category', 'status', 'work_type']) {
       if (url.searchParams.get(key)) { clauses.push(`j.${key} = ?`); values.push(url.searchParams.get(key)); }
     }
+    const language = url.searchParams.get('lang');
+    if (language) { clauses.push('j.content_language = ?'); values.push(language); }
+    const query = (url.searchParams.get('q') || '').trim();
+    if (query) {
+      if (query.length > 100) return reply({ success: false, error: 'Search query must be 100 characters or fewer' }, 400);
+      const pattern = `%${query.toLowerCase()}%`;
+      clauses.push(`(
+        LOWER(j.title) LIKE ? OR LOWER(j.description) LIKE ? OR LOWER(j.location) LIKE ? OR
+        LOWER(j.province) LIKE ? OR LOWER(j.category) LIKE ? OR LOWER(e.company_name) LIKE ? OR
+        LOWER(COALESCE(j.title_th, '')) LIKE ? OR LOWER(COALESCE(j.title_en, '')) LIKE ? OR
+        LOWER(COALESCE(j.description_th, '')) LIKE ? OR LOWER(COALESCE(j.description_en, '')) LIKE ?
+      )`);
+      values.push(...Array(10).fill(pattern));
+    }
+    const sort = url.searchParams.get('sort');
+    const orderBy = sort === 'salary_asc'
+      ? "CAST(REPLACE(COALESCE(j.salary_range, ''), ',', '') AS INTEGER) ASC, j.created_at DESC"
+      : sort === 'salary_desc'
+        ? "CAST(REPLACE(COALESCE(j.salary_range, ''), ',', '') AS INTEGER) DESC, j.created_at DESC"
+        : 'j.created_at DESC';
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-    const { results } = await env.DB.prepare(`SELECT j.*, e.company_name FROM jobs j JOIN employers e ON e.employer_id = j.employer_id ${where} ORDER BY j.created_at DESC`).bind(...values).all();
+    const { results } = await env.DB.prepare(`SELECT j.*, e.company_name FROM jobs j JOIN employers e ON e.employer_id = j.employer_id ${where} ORDER BY ${orderBy}`).bind(...values).all();
     return reply({ success: true, count: results.length, data: results });
   }
 
   if (method === 'POST' && path === '/api/jobs') {
     const input = await bodyOf(request);
+    if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
     for (const key of ['employer_id', 'title', 'description', 'category', 'location', 'province']) {
       if (!input[key]) return reply({ success: false, error: 'Missing required fields' }, 400);
     }
@@ -109,6 +164,7 @@ async function handleApi(request, env, url) {
     }
     if (method === 'PATCH') {
       const input = await bodyOf(request);
+      if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
       if (String(existing.employer_id) !== String(input.employer_id)) return reply({ success: false, error: 'You are not authorized to update this job' }, 403);
       const fields = jobFields.filter((key) => input[key] !== undefined);
       if (!fields.length) return reply({ success: false, error: 'No fields to update' }, 400);
@@ -121,6 +177,7 @@ async function handleApi(request, env, url) {
   if (method === 'POST' && (match = path.match(/^\/api\/jobs\/(\d+)\/applications$/))) {
     const jobId = match[1];
     const input = await bodyOf(request);
+    if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
     if (!input.student_id) return reply({ success: false, error: 'student_id is required' }, 400);
     const student = await env.DB.prepare('SELECT * FROM students WHERE student_id = ?').bind(input.student_id).first();
     if (!student) return reply({ success: false, error: 'Student not found' }, 404);
@@ -150,6 +207,7 @@ async function handleApi(request, env, url) {
   if (method === 'PATCH' && (match = path.match(/^\/api\/applications\/(\d+)\/status$/))) {
     const id = match[1];
     const input = await bodyOf(request);
+    if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
     if (!applicationStatuses.includes(input.status)) return reply({ success: false, error: 'Invalid application status' }, 400);
     const application = await env.DB.prepare('SELECT * FROM applications WHERE application_id = ?').bind(id).first();
     if (!application) return reply({ success: false, error: 'Application not found' }, 404);
@@ -192,6 +250,7 @@ async function handleApi(request, env, url) {
 
   if (method === 'PATCH' && path === '/api/notifications/read-all') {
     const input = await bodyOf(request);
+    if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
     const recipientId = Number(input.recipient_id);
     if (!Number.isInteger(recipientId) || recipientId <= 0) {
       return reply({ success: false, error: 'A positive integer recipient_id is required' }, 400);
@@ -202,6 +261,7 @@ async function handleApi(request, env, url) {
 
   if (method === 'PATCH' && (match = path.match(/^\/api\/notifications\/(\d+)\/read$/))) {
     const input = await bodyOf(request);
+    if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
     const recipientId = Number(input.recipient_id);
     if (!Number.isInteger(recipientId) || recipientId <= 0) {
       return reply({ success: false, error: 'A positive integer recipient_id is required' }, 400);
@@ -213,8 +273,9 @@ async function handleApi(request, env, url) {
   }
 
   if (method === 'POST' && path === '/api/webhooks/notification') {
-    if (!env.WEBHOOK_SECRET || request.headers.get('x-webhook-secret') !== env.WEBHOOK_SECRET) return reply({ success: false, error: 'Invalid webhook secret' }, 401);
+    if (!env.WEBHOOK_SECRET || !secretsMatch(request.headers.get('x-webhook-secret'), env.WEBHOOK_SECRET)) return reply({ success: false, error: 'Invalid webhook secret' }, 401);
     const input = await bodyOf(request);
+    if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
     const eventId = input.event_id || input.eventId;
     const eventType = input.event_type || input.eventType || input.type;
     const recipientValue = input.userId ?? input.user_id ?? input.student_id ?? input.recipient_id ?? input.metadata?.userId ?? input.metadata?.user_id ?? input.metadata?.student_id;
@@ -240,6 +301,7 @@ async function handleApi(request, env, url) {
 
   if (method === 'POST' && path === '/api/integration/notifications') {
     const input = await bodyOf(request);
+    if (!input) return reply({ success: false, error: 'A valid JSON request body up to 16 KB is required' }, 400);
     if (!input.application_id) return reply({ success: false, error: 'application_id is required' }, 400);
     const application = await env.DB.prepare('SELECT * FROM applications WHERE application_id = ?').bind(input.application_id).first();
     if (!application) return reply({ success: false, error: 'Application not found' }, 404);
@@ -260,12 +322,10 @@ export default {
       const response = url.pathname.startsWith('/api/')
         ? await handleApi(request, env, url)
         : await env.ASSETS.fetch(request);
-      const headers = new Headers(response.headers);
-      headers.set('access-control-allow-origin', '*');
-      headers.set('access-control-allow-headers', 'content-type,x-webhook-secret,x-partner-service');
-      headers.set('access-control-allow-methods', 'GET,POST,PATCH,DELETE,OPTIONS');
-      return new Response(response.body, { status: response.status, headers });
-    } catch (error) { return failure(error); }
+      return applySecurityHeaders(request, response, env);
+    } catch (error) { return applySecurityHeaders(request, failure(error), env); }
   },
   async scheduled(_controller, env, ctx) { ctx.waitUntil(retryOutbox(env)); },
 };
+
+export { applySecurityHeaders, bodyOf, handleApi, secretsMatch };
