@@ -15,6 +15,15 @@ type AuthValue = {
 };
 
 const AuthContext = createContext<AuthValue | null>(null);
+const activeRoleKey = 'jobboard_active_role';
+
+function roleForCurrentTab(): User['role'] | undefined {
+  const path = window.location.pathname;
+  if (path.startsWith('/student/')) return 'student';
+  if (path.startsWith('/employer/')) return 'employer';
+  const stored = window.sessionStorage.getItem(activeRoleKey);
+  return stored === 'student' || stored === 'employer' ? stored : undefined;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -22,11 +31,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshSession = useCallback(async (): Promise<User | null> => {
     try {
-      const account = await authService.me();
+      const expectedRole = roleForCurrentTab();
+      const account = await authService.me(expectedRole);
       setUser(account);
       return account;
     } catch {
       setUser(null);
+      window.sessionStorage.removeItem(activeRoleKey);
       return null;
     }
   }, []);
@@ -63,11 +74,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshSession,
     login: async (email, password) => {
       const account = await authService.login(email, password);
+      window.sessionStorage.setItem(activeRoleKey, account.role);
       setUser(account);
       return account;
     },
     logout: async () => {
-      try { await authService.logout(); } finally { setUser(null); }
+      try { if (user) await authService.logout(user.role); } finally {
+        window.sessionStorage.removeItem(activeRoleKey);
+        setUser(null);
+      }
     },
     updateProfile: async (patch: Partial<User>) => {
       const updated = { ...(user as User), ...patch };

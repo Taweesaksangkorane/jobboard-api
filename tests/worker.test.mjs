@@ -20,7 +20,8 @@ async function createTestCookie(session, secret = testSecret) {
   let sigBinary = '';
   for (const byte of sigBytes) sigBinary += String.fromCharCode(byte);
   const signature = btoa(sigBinary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '');
-  return `jobboard_session=${payload}.${signature}`;
+  const cookieName = session.role === 'student' ? 'jobboard_student_session' : 'jobboard_employer_session';
+  return `${cookieName}=${payload}.${signature}`;
 }
 
 async function api(path, init = {}, env = baseEnv) {
@@ -61,6 +62,16 @@ test('a valid signed session is available from the server-only session endpoint'
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.deepEqual(body.data, { id: '4', name: 'Test Student', email: 'student@example.com', role: 'student', studentId: '4' });
+});
+
+test('student and employer sessions can coexist in separate role cookies', async () => {
+  const studentCookie = await createTestCookie({ id: 4, role: 'student', email: 'student@example.com', name: 'Test Student' });
+  const employerCookie = await createTestCookie({ id: 1, role: 'employer', email: 'employer@example.com', name: 'Test Employer' });
+  const headers = { cookie: `${studentCookie}; ${employerCookie}` };
+  const student = await api('/api/auth/me?role=student', { headers });
+  const employer = await api('/api/auth/me?role=employer', { headers });
+  assert.equal((await student.json()).data.role, 'student');
+  assert.equal((await employer.json()).data.role, 'employer');
 });
 
 test('job creation rejects malformed and incomplete input before database writes', async () => {

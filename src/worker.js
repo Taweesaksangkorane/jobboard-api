@@ -37,32 +37,47 @@ async function createSession(session, secret) {
   return `${payload}.${signature}`;
 }
 
-async function readSession(request, env) {
-  if (!env.AUTH_SESSION_SECRET) return null;
+function sessionCookieName(role) {
+  return role === 'student' ? 'jobboard_student_session' : 'jobboard_employer_session';
+}
+
+function cookieValue(request, name) {
   const cookie = request.headers.get('cookie') || '';
-  const token = cookie.split(';').map((item) => item.trim()).find((item) => item.startsWith('jobboard_session='))?.slice('jobboard_session='.length);
-  if (!token || !token.includes('.')) return null;
-  const [payload, signature] = token.split('.');
-  const expected = base64UrlEncode(await hmac(payload, env.AUTH_SESSION_SECRET));
-  if (!secretsMatch(signature, expected)) return null;
-  try {
-    const session = JSON.parse(new TextDecoder().decode(base64UrlDecode(payload)));
-    if (!['student', 'employer'].includes(session.role) || !Number.isInteger(Number(session.id)) || session.exp <= Math.floor(Date.now() / 1000)) return null;
-    return session;
-  } catch { return null; }
+  return cookie.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${name}=`))?.slice(name.length + 1);
 }
 
-function sessionCookie(token) {
-  return `jobboard_session=${token}; Path=/; Max-Age=${sessionDurationSeconds}; HttpOnly; Secure; SameSite=Lax`;
+async function readSession(request, env, expectedRole) {
+  if (!env.AUTH_SESSION_SECRET) return null;
+  const roles = expectedRole ? [expectedRole] : ['employer', 'student'];
+  for (const role of roles) {
+    const token = cookieValue(request, sessionCookieName(role));
+    if (!token || !token.includes('.')) continue;
+    const [payload, signature] = token.split('.');
+    const expected = base64UrlEncode(await hmac(payload, env.AUTH_SESSION_SECRET));
+    if (!secretsMatch(signature, expected)) continue;
+    try {
+      const session = JSON.parse(new TextDecoder().decode(base64UrlDecode(payload)));
+      if (session.role === role && Number.isInteger(Number(session.id)) && session.exp > Math.floor(Date.now() / 1000)) return session;
+    } catch { /* Try another role cookie. */ }
+  }
+  return null;
 }
 
-function clearSessionCookie() {
-  return 'jobboard_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax';
+function sessionCookie(token, role) {
+  return `${sessionCookieName(role)}=${token}; Path=/; Max-Age=${sessionDurationSeconds}; HttpOnly; Secure; SameSite=Lax`;
+}
+
+function clearSessionCookie(role) {
+  return `${sessionCookieName(role)}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
 }
 
 async function requireRole(request, env, role) {
-  const session = await readSession(request, env);
-  if (!session) return { error: reply({ success: false, error: 'Authentication required' }, 401) };
+  const session = await readSession(request, env, role);
+  if (!session) {
+    const anotherRoleSession = role ? await readSession(request, env) : null;
+    if (anotherRoleSession) return { error: reply({ success: false, error: 'You are not authorized for this action' }, 403) };
+    return { error: reply({ success: false, error: 'Authentication required' }, 401) };
+  }
   if (role && session.role !== role) return { error: reply({ success: false, error: 'You are not authorized for this action' }, 403) };
   return { session };
 }
@@ -161,13 +176,20 @@ async function handleApi(request, env, url) {
       : await env.DB.prepare('SELECT employer_id AS id, company_name AS name FROM employers WHERE employer_id = ? AND approval_status = ?').bind(account.id, 'approved').first();
     if (!profile) return reply({ success: false, error: 'Demo account is unavailable' }, 403);
     const token = await createSession({ id: Number(profile.id), role: account.role, email: account.email, name: profile.name }, env.AUTH_SESSION_SECRET);
-    return reply({ success: true, data: { id: String(profile.id), name: profile.name, email: account.email, role: account.role, studentId: account.role === 'student' ? String(profile.id) : undefined, companyName: account.role === 'employer' ? profile.name : undefined } }, 200, { 'set-cookie': sessionCookie(token) });
+    return reply({ success: true, data: { id: String(profile.id), name: profile.name, email: account.email, role: account.role, studentId: account.role === 'student' ? String(profile.id) : undefined, companyName: account.role === 'employer' ? profile.name : undefined } }, 200, { 'set-cookie': sessionCookie(token, account.role) });
   }
 
-  if (method === 'POST' && path === '/api/auth/logout') return reply({ success: true, data: null }, 200, { 'set-cookie': clearSessionCookie() });
+  if (method === 'POST' && path === '/api/auth/logout') {
+    const input = await bodyOf(request);
+    const role = input?.role;
+    if (!['student', 'employer'].includes(role)) return reply({ success: false, error: 'A valid session role is required' }, 400);
+    return reply({ success: true, data: null }, 200, { 'set-cookie': clearSessionCookie(role) });
+  }
 
   if (method === 'GET' && path === '/api/auth/me') {
-    const auth = await requireRole(request, env);
+    const requestedRole = url.searchParams.get('role');
+    if (requestedRole && !['student', 'employer'].includes(requestedRole)) return reply({ success: false, error: 'Invalid session role' }, 400);
+    const auth = await requireRole(request, env, requestedRole || undefined);
     if (auth.error) return auth.error;
     const { session } = auth;
     return reply({ success: true, data: { id: String(session.id), name: session.name, email: session.email, role: session.role, studentId: session.role === 'student' ? String(session.id) : undefined, companyName: session.role === 'employer' ? session.name : undefined } });
