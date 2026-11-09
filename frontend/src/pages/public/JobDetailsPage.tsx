@@ -282,7 +282,7 @@ export const JobDetailsPage: React.FC = () => {
                     ? t('jobDetails.descriptionOnly')
                     : t('jobDetails.description')}
                 </h2>
-                <div className="text-sm text-[#25243A] leading-relaxed whitespace-pre-line">
+                <div className="text-sm text-[#25243A] leading-relaxed whitespace-pre-line break-words">
                   {localized.description}
                 </div>
               </div>
@@ -296,7 +296,7 @@ export const JobDetailsPage: React.FC = () => {
                 </h3>
                 <ul className="space-y-2 text-sm text-[#25243A] list-disc list-inside leading-relaxed">
                   {responsibilityItems.map((item, idx) => (
-                    <li key={idx}>{item}</li>
+                    <li key={idx} className="break-words">{item}</li>
                   ))}
                 </ul>
               </div>
@@ -310,7 +310,7 @@ export const JobDetailsPage: React.FC = () => {
                 </h3>
                 <ul className="space-y-2 text-sm text-[#25243A] list-disc list-inside leading-relaxed">
                   {qualificationItems.map((item, idx) => (
-                    <li key={idx}>{item}</li>
+                    <li key={idx} className="break-words">{item}</li>
                   ))}
                 </ul>
               </div>
@@ -346,7 +346,7 @@ export const JobDetailsPage: React.FC = () => {
                   {benefitItems.map((item, idx) => (
                     <div key={idx} className="flex items-start gap-2">
                       <CheckCircle2 className="h-4 w-4 text-[#16A36A] shrink-0 mt-0.5" />
-                      <span>{item}</span>
+                      <span className="break-words">{item}</span>
                     </div>
                   ))}
                 </div>

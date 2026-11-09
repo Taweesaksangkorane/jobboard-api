@@ -139,7 +139,7 @@ export const ApplyModal: React.FC<ApplyModalProps> = ({ job, isOpen, onClose, on
               inputMode="numeric"
               maxLength={10}
               pattern="0[0-9]{9}"
-              helperText="10 digits, for example 0854565589"
+              helperText="10 digits, for example 0xxxxxxxxx"
               placeholder="08XXXXXXXX"
             />
           </div>
